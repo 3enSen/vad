@@ -168,24 +168,26 @@
     flex:0 0 auto;
   }
   /* 取景框：四角粗黑折线（二维码扫描框的样子）。
-     黑线在暗场景里会糊掉，所以补一圈很淡的白色晕边把它托出来 */
+     只留一道很淡的深色投影做层次，不加任何白色晕边 —— 加了会在黑线旁边读成一条白边 */
   #scanFrame i.c{
-    position:absolute;width:46px;height:46px;
-    border:5.5px solid #14100E;border-radius:10px;
-    filter:drop-shadow(0 0 2.5px rgba(255,255,255,.78)) drop-shadow(0 2px 7px rgba(20,16,14,.34));
+    position:absolute;width:54px;height:54px;
+    border:8px solid #14100E;border-radius:12px;
+    filter:drop-shadow(0 2px 6px rgba(20,16,14,.26));
     transition:border-color .16s ease, transform .16s ease;
   }
   /* 识别有进展时角标转深橙（仍是深色线，不会跳成白框） */
-  #scanFrame.warm i.c{border-color:#D2541A;transform:scale(1.05)}
-  #scanFrame i.tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
-  #scanFrame i.tr{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 14px 0 0}
-  #scanFrame i.bl{bottom:-2px;left:-2px;border-right:0;border-top:0;border-radius:0 0 0 14px}
-  #scanFrame i.br{bottom:-2px;right:-2px;border-left:0;border-top:0;border-radius:0 0 14px 0}
+  #scanFrame.warm i.c{border-color:#D2541A;transform:scale(1.04)}
+  #scanFrame i.tl{top:-3px;left:-3px;border-right:0;border-bottom:0;border-radius:16px 0 0 0}
+  #scanFrame i.tr{top:-3px;right:-3px;border-left:0;border-bottom:0;border-radius:0 16px 0 0}
+  #scanFrame i.bl{bottom:-3px;left:-3px;border-right:0;border-top:0;border-radius:0 0 0 16px}
+  #scanFrame i.br{bottom:-3px;right:-3px;border-left:0;border-top:0;border-radius:0 0 16px 0}
+  /* 扫描横线：与边框同一粗细、实心一条，两端不收细 */
   #scanLine{
-    position:absolute;left:9%;right:9%;height:2px;border-radius:2px;
-    background:linear-gradient(90deg,transparent,rgba(255,122,69,.95),transparent);
+    position:absolute;left:8%;right:8%;height:8px;border-radius:2px;
+    background:#14100E;
     animation:scanSweep 2.2s ease-in-out infinite;
   }
+  #scanFrame.warm #scanLine{background:#D2541A}
   @keyframes scanSweep{
     0%{top:12%;opacity:0}
     18%{opacity:1}
@@ -317,16 +319,19 @@
       var(--sx) var(--sh),
       calc(100% - var(--sx) - var(--sw)) var(--sh);
   }
+  /* 反转镜头：挂在屏幕右上角（不再压在取景框上，不挡画面） */
   #capFlip{
-    position:absolute;right:10px;top:10px;z-index:3;
-    width:38px;height:38px;border-radius:50%;border:none;
-    background:rgba(20,16,14,.42);color:#fff;
+    position:absolute;z-index:5;
+    right:14px;top:calc(env(safe-area-inset-top,0px) + 14px);
+    width:42px;height:42px;border-radius:50%;border:none;
+    background:rgba(20,16,14,.46);color:#fff;
     display:grid;place-items:center;cursor:pointer;
-    backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+    backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+    box-shadow:0 6px 16px rgba(20,16,14,.22);
     transition:transform .18s ease, background .2s;
   }
   #capFlip:active{transform:scale(.92)}
-  #capFlip svg{width:19px;height:19px}
+  #capFlip svg{width:20px;height:20px}
   .capActions{
     display:flex;gap:12px;align-items:center;justify-content:center;
     margin-top:18px;width:100%;
@@ -487,16 +492,18 @@
 
     <div id="capStage">
       <img id="capTemplate" alt="">
-      <button id="capFlip" type="button" aria-label="反转镜头">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
-             stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4.4 9.2A4 4 0 0 1 8.3 5.6h1.9"/>
-          <path d="M19.6 14.8a4 4 0 0 1-3.9 3.6h-1.9"/>
-          <path d="M8.9 3.1 11 5.2 8.9 7.3"/>
-          <path d="M15.1 16.7 13 18.8l2.1 2.1"/>
-        </svg>
-      </button>
     </div>
+
+    <!-- 反转镜头：屏幕右上角 -->
+    <button id="capFlip" type="button" aria-label="反转镜头">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.4 9.2A4 4 0 0 1 8.3 5.6h1.9"/>
+        <path d="M19.6 14.8a4 4 0 0 1-3.9 3.6h-1.9"/>
+        <path d="M8.9 3.1 11 5.2 8.9 7.3"/>
+        <path d="M15.1 16.7 13 18.8l2.1 2.1"/>
+      </svg>
+    </button>
 
     <div class="capActions">
       <button class="btn ghost" id="capBack" type="button">返回</button>
@@ -621,16 +628,17 @@ function hitPose(persona, e){
     };
   }
   if(persona === 'shy'){
-    /* 腼腆：先缩一下、低头，然后小幅快速晃两下再慢慢放开 */
-    const shrink = Math.sin(e * Math.PI);
+    /* 腼腆：不再缩起来低头，改成不好意思地抬头往上看 ——
+       下巴抬起来、上身轻轻拔高一截，没有蹦跳，落地也不压扁 */
+    const up = Math.sin(e * Math.PI);
     return {
-      dy: -shrink * 0.030,
-      rotX: shrink * 0.20,
-      rotY: Math.sin(e * Math.PI * 2) * 0.10,
-      rotZ: Math.sin(e * Math.PI * 4) * 0.085 * (1 - e),
-      sx: 1 + shrink * 0.055,
-      sy: 1 - shrink * 0.095,
-      scale: 1 - shrink * 0.105,
+      dy: up * 0.048,
+      rotX: -up * 0.30,                              // 负值是抬头（同 cool 的"抬下巴"）
+      rotY: Math.sin(e * Math.PI * 2) * 0.055,
+      rotZ: Math.sin(e * Math.PI * 3) * 0.030 * (1 - e),
+      sx: 1 - up * 0.016,
+      sy: 1 + up * 0.055,                            // 拔高，配合抬头
+      scale: 1 + up * 0.018,
     };
   }
   /* 热情：大跳 + 拉伸 + 扭身 + 落地压扁 */
@@ -804,10 +812,9 @@ function faceCanvas(persona, key, kind){
   /* ---------- 被炸到 ---------- */
   if(kind === 'hurt'){
     if(persona === 'cool'){
-      /* 装酷：墨镜被震歪、镜片裂了一道，但人没躲 —— 只是抬了抬下巴 */
-      drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, { rot: -0.14, crack: true });
-      sparkle(g, W * 0.815, cyPx - H * 0.40, Math.min(W, H) * 0.050);
-      sparkle(g, W * 0.905, cyPx - H * 0.24, Math.min(W, H) * 0.030);
+      /* 装酷：墨镜被震歪、镜片裂开，但人没躲 —— 只是抬了抬下巴。
+         右上角不放任何星芒（按要求去掉），"被炸"这件事全靠裂纹本身说 */
+      drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, { rot: -0.14, crack: true, noSpark: true });
       return c;
     }
     if(persona === 'shy'){
@@ -817,13 +824,10 @@ function faceCanvas(persona, key, kind){
       drawSqueeze(g, eyeR, cyPx, L, W, H, -1);
       return c;
     }
-    /* 热情：两只眼睛转成圈圈，脸边炸出小火花 */
-    const sr = Math.min(W, H) * 0.185;
+    /* 热情：两只眼睛转成圈圈（晕眩），圈圈加粗放大，周围不放星星 */
+    const sr = Math.min(W, H) * 0.240;
     drawSwirl(g, eyeL, cyPx, sr);
-    drawSwirl(g, eyeR, cyPx, sr * 0.94);
-    [[0.20, -0.30, 0.062], [0.80, -0.26, 0.048], [0.775, 0.32, 0.038]].forEach(([fx, fy, fr]) => {
-      sparkle(g, W * fx, cyPx + H * fy, Math.min(W, H) * fr, 'rgba(255,196,74,.95)');
-    });
+    drawSwirl(g, eyeR, cyPx, sr * 0.95);
     return c;
   }
 
@@ -919,9 +923,16 @@ function drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, o){
   });
 
   // 右上角星芒：小尺寸下这枚星芒就是"墨镜反光"的主要读点，压在外侧边角上
-  sparkle(g, xs[1] + lensW * 0.96, y0 + lensH * 0.06, lensH * 0.26);
+  if(!o.noSpark) sparkle(g, xs[1] + lensW * 0.96, y0 + lensH * 0.06, lensH * 0.26);
 
-  if(o.crack) drawCrack(g, xs[0] + lensW * 0.54, y0 + lensH * 0.52, lensW, lensH);
+  /* 裂开的镜片：裁在镜片形状里，裂纹会一直裂到镜片边缘，看起来才像真碎了 */
+  if(o.crack){
+    g.save();
+    roundRect(g, xs[0], y0, lensW, lensH, rr);
+    g.clip();
+    drawCrack(g, xs[0] + lensW * 0.46, y0 + lensH * 0.44, lensW, lensH);
+    g.restore();
+  }
   g.restore();
 }
 
@@ -939,21 +950,38 @@ function sparkle(g, cx, cy, r, color){
   g.restore();
 }
 
-/* 镜片上的裂纹 */
+/* 镜片上的裂纹：一条主缝斜穿整块镜片，再从主缝上分出几条细支。
+   主缝重、支线轻 —— 这样在小尺寸下读成"裂了"，而不是一颗放光的星。
+   先铺一层深色再压亮白，深色镜片和斜高光上都读得出来。 */
 function drawCrack(g, cx, cy, w, h){
-  g.save();
-  g.strokeStyle = 'rgba(255,255,255,.90)';
-  g.lineWidth = Math.max(2.4, h * 0.052);
-  g.lineCap = 'round';
-  g.lineJoin = 'round';
-  g.beginPath();
-  g.moveTo(cx - w * 0.30, cy - h * 0.46);
-  g.lineTo(cx - w * 0.06, cy - h * 0.10);
-  g.lineTo(cx + w * 0.12, cy - h * 0.26);
-  g.lineTo(cx + w * 0.02, cy + h * 0.12);
-  g.lineTo(cx + w * 0.22, cy + h * 0.46);
-  g.stroke();
-  g.restore();
+  const main = [[-0.56,-0.66],[-0.20,-0.28],[-0.32, 0.04],[-0.04, 0.26],[0.30, 0.70]];
+  const branches = [
+    [[-0.20,-0.28],[ 0.09,-0.46],[ 0.36,-0.58]],
+    [[-0.32, 0.04],[-0.62, 0.16]],
+    [[-0.04, 0.26],[ 0.26, 0.04],[ 0.50, 0.10]],
+    [[-0.04, 0.26],[-0.20, 0.52]],
+  ];
+  const stroke = (pts, lw, color) => {
+    g.save();
+    g.strokeStyle = color;
+    g.lineWidth = lw;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.beginPath();
+    for(let i = 0; i < pts.length; i++){
+      const px = cx + pts[i][0] * w, py = cy + pts[i][1] * h;
+      if(i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.stroke();
+    g.restore();
+  };
+
+  const lw = Math.max(6.2, h * 0.145);
+  [[main, 1], ...branches.map(b => [b, 0.62])].forEach(([pts, k]) => {
+    stroke(pts, lw * k * 1.75, 'rgba(8,6,10,.55)');       // 深色底：从浅色高光里抠出来
+    stroke(pts, lw * k,        'rgba(255,255,255,.96)');  // 亮缝
+    stroke(pts, lw * k * 0.34, 'rgba(255,255,255,1)');    // 更白更硬的芯
+  });
 }
 
 /* 脸颊两团晕（shy 专用）。rScale / dy 可以单独压一压，被炸时脸不能糊成一团红 */
@@ -992,16 +1020,17 @@ function drawSqueeze(g, cx, cy, L, W, H, dir){
   g.restore();
 }
 
-/* 圈圈眼（晕眩） */
+/* 圈圈眼（晕眩）：线加粗，小尺寸下也读得出是在打转 */
 function drawSwirl(g, cx, cy, r){
   g.save();
-  g.strokeStyle = 'rgba(255,255,255,.95)';
-  g.lineWidth = Math.max(3, r * 0.24);
+  g.strokeStyle = 'rgba(255,255,255,.97)';
+  g.lineWidth = Math.max(5.5, r * 0.295);
   g.lineCap = 'round';
+  g.lineJoin = 'round';
   g.beginPath();
-  for(let i = 0; i <= 100; i++){
-    const a  = (i / 100) * Math.PI * 2.55;
-    const rr = r * (i / 100) * 0.94;
+  for(let i = 0; i <= 160; i++){
+    const a  = (i / 160) * Math.PI * 3.30;
+    const rr = r * (i / 160) * 0.92;
     const x  = cx + Math.cos(a) * rr;
     const y  = cy + Math.sin(a) * rr * 0.92;
     if(i === 0) g.moveTo(x, y); else g.lineTo(x, y);
@@ -1839,7 +1868,7 @@ function drawItem(it){
   }
 }
 
-/* 形象本体：3D 就绪时交给 three 渲染，这里只画地面阴影、平面兜底、眩晕星星 */
+/* 形象本体：3D 就绪时交给 three 渲染，这里只画地面阴影和平面兜底 */
 function drawSprite2D(){
   const sp = G.sprite;
   const w = sp.w, h = sp.h;
@@ -1916,21 +1945,6 @@ function drawSprite2D(){
       ctx.fill();
     }
     ctx.restore();
-  }
-
-  if(G.stun > 0){
-    for(let i=0;i<3;i++){
-      const a = G.t*6 + i*Math.PI*2/3;
-      const rr = w*0.42;
-      const px = sp.x + Math.cos(a)*rr;
-      const py = top - 5*S + Math.sin(a)*rr*0.26;
-      ctx.save();
-      ctx.globalAlpha = .9;
-      starPath(ctx, px, py, 6*S, 2.6*S, a);
-      ctx.fillStyle = '#FFD166';
-      ctx.fill();
-      ctx.restore();
-    }
   }
 }
 
@@ -2733,7 +2747,16 @@ function shoot(){
     const kh = Math.min(srcH, vh - ky);
 
     if(kw > 1 && kh > 1){
-      g.drawImage(v, kx, ky, kw, kh, ox, oy, ow, oh);
+      if(camFacing === 'user'){
+        /* 自拍：取景里看到的是镜像画面，照片也保持镜像，拍出来才和刚才看到的一致 */
+        g.save();
+        g.translate(ox + ow, oy);
+        g.scale(-1, 1);
+        g.drawImage(v, kx, ky, kw, kh, 0, 0, ow, oh);
+        g.restore();
+      } else {
+        g.drawImage(v, kx, ky, kw, kh, ox, oy, ow, oh);
+      }
     } else {
       g.fillStyle = '#D9CFC0';
       g.fillRect(ox, oy, ow, oh);
