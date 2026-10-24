@@ -46,6 +46,11 @@
   body.cam-on #cam,body.cam-on #camMask{display:block}
   body.cam-on #fallback{display:none}
 
+  /* 3D 形象层（必须在 2D 画布之上：地面阴影/暖光画在 2D 上，压在模型身上会变成一道横线） */
+  canvas#three{
+    position:absolute;inset:0;width:100%;height:100%;
+    pointer-events:none;z-index:5;display:block;
+  }
   canvas#game{
     position:absolute;inset:0;width:100%;height:100%;
     touch-action:none;z-index:4;display:block;
@@ -143,19 +148,20 @@
   .btn.ghost:active{background:#FAF7F3}
   .btn[hidden]{display:none}
 
-  /* ---------- 识别页（白底 + 取景洞） ---------- */
-  #scanSheet{justify-content:space-between}
-  .scanTop{display:flex;flex-direction:column;align-items:center;width:100%;position:relative;z-index:2}
+  /* ---------- 识别页（无白底，全屏实景 + 取景框） ---------- */
+  #scanSheet{justify-content:center;gap:28px}
   #scanFrame{
     position:relative;
     width:min(62vmin,262px);height:min(62vmin,262px);
     border-radius:30px;
-    border:2px solid rgba(20,16,14,.14);
-    box-shadow:0 0 0 9999px #fff;
+    border:1.5px solid rgba(255,255,255,.62);
+    box-shadow:0 12px 38px rgba(20,16,14,.20), inset 0 0 34px rgba(20,16,14,.10);
     flex:0 0 auto;
   }
   #scanFrame i.c{
-    position:absolute;width:32px;height:32px;border:3px solid var(--ink);border-radius:7px;
+    position:absolute;width:32px;height:32px;
+    border:3px solid #fff;border-radius:7px;
+    filter:drop-shadow(0 1px 3px rgba(20,16,14,.42));
   }
   #scanFrame i.tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
   #scanFrame i.tr{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 14px 0 0}
@@ -177,20 +183,19 @@
     width:100%;position:relative;z-index:2;
   }
   #scanBarWrap{
-    width:min(62vmin,262px);height:6px;border-radius:99px;
-    background:#EFE9E2;overflow:hidden;
+    width:min(62vmin,262px);height:5px;border-radius:99px;
+    background:rgba(255,255,255,.42);
+    box-shadow:0 1px 6px rgba(20,16,14,.18);
+    overflow:hidden;
   }
   #scanBar{
     height:100%;width:0%;border-radius:99px;
-    background:linear-gradient(90deg,#FFB020,#FF6B35);
+    background:linear-gradient(90deg,#FFD24A,#FF6B35);
     transition:width .12s linear;
   }
-  #scanDebug{
-    font-size:10.5px;color:var(--ink3);
-    font-family:ui-monospace,Menlo,monospace;
-    margin-top:9px;letter-spacing:.02em;min-height:14px;
-  }
-  #camFail{margin-top:14px}
+  /* 识别页底部小字：已按要求去掉 */
+  #scanDebug{display:none}
+  #camFail{margin-top:18px}
 
   /* ---------- 结算 ---------- */
   #resultTitle{font-size:clamp(21px,5.6vmin,28px);font-weight:800}
@@ -201,7 +206,7 @@
   #photoCard{
     width:min(300px,80vw);height:min(38vh,290px);
     margin:16px 0 2px;border-radius:20px;
-    background:#fff;border:1.5px dashed #DBD3C9;
+    background:transparent;border:1.5px dashed #E6DFD6;
     display:grid;place-items:center;
     color:var(--ink3);font-size:12.5px;line-height:1.9;letter-spacing:.04em;
   }
@@ -230,6 +235,8 @@
     display:grid;place-items:center;
   }
   #capSlot.has-tpl{border:none;background:#EFEAE4}
+  /* 还没有合照模板时，照片位直接铺满，避免周围留一圈白边 */
+  #capSlot.full{border:none;background:#EFEAE4}
   #capVideo{
     width:100%;height:100%;object-fit:cover;display:block;
     transform:scaleX(-1);
@@ -304,6 +311,7 @@
   <video id="cam" playsinline muted autoplay></video>
   <div id="camMask"></div>
 
+  <canvas id="three"></canvas>
   <canvas id="game"></canvas>
 
   <div id="hud">
@@ -314,26 +322,8 @@
   <button id="arToggle" type="button">AR</button>
   <div id="toast"></div>
 
-  <!-- 介绍 + 识别（同一屏：识别到图形才进入游戏） -->
+  <!-- 第一步：纯扫描（无白底，全屏实景 + 取景框） -->
   <div class="sheet clear" id="scanSheet">
-    <div class="scanTop">
-      <div class="eyebrow">AR · 课程互动</div>
-      <h1>接住<em>星星</em></h1>
-      <p class="sub">拖动小精灵，躲开炸弹，收集星星解锁不同合照</p>
-
-      <div id="pickers">
-        <button class="pick sel" data-char="v" type="button">
-          <img src="chars/v.png" alt="vv"><span>vv</span>
-        </button>
-        <button class="pick" data-char="a" type="button">
-          <img src="chars/a.png" alt="aa"><span>aa</span>
-        </button>
-        <button class="pick" data-char="d" type="button">
-          <img src="chars/d.png" alt="dd"><span>dd</span>
-        </button>
-      </div>
-    </div>
-
     <div id="scanFrame">
       <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
       <div id="scanLine"></div>
@@ -344,6 +334,27 @@
       <div id="scanDebug">正在开启摄像头…</div>
       <button class="btn ghost" id="camFail" type="button" hidden>摄像头不可用 · 先直接体验</button>
     </div>
+  </div>
+
+  <!-- 第二步：扫描成功后进入 —— 接住星星 + 挑选角色 -->
+  <div class="sheet light hide" id="intro">
+    <div class="eyebrow">AR · 课程互动</div>
+    <h1>接住<em>星星</em></h1>
+    <p class="sub">拖动小精灵，躲开炸弹，收集星星解锁不同合照</p>
+
+    <div id="pickers">
+      <button class="pick sel" data-char="v" type="button">
+        <img src="chars/v.png" alt="vv"><span>vv</span>
+      </button>
+      <button class="pick" data-char="a" type="button">
+        <img src="chars/a.png" alt="aa"><span>aa</span>
+      </button>
+      <button class="pick" data-char="d" type="button">
+        <img src="chars/d.png" alt="dd"><span>dd</span>
+      </button>
+    </div>
+
+    <button class="btn" id="startBtn" type="button">开始游戏</button>
   </div>
 
   <!-- 结算 -->
@@ -413,12 +424,12 @@ const CONFIG = {
   bombFallTo:   1.9,
   stunDuration: 1.45,
 
-  // 炸弹贴着星星生成，形成夹击
-  bombBesideChance: 0.85,
-  bombBesideMin: 58,
-  bombBesideMax: 102,
-  bombDelayMin: 0.22,
-  bombDelayMax: 0.45,
+  // 炸弹贴着星星生成，形成夹击（概率与贴近度提高 = 更难）
+  bombBesideChance: 0.95,
+  bombBesideMin: 50,
+  bombBesideMax: 92,
+  bombDelayMin: 0.12,
+  bombDelayMax: 0.32,
 
   followStiffness: 21,
   keySpeed: 720,
@@ -444,11 +455,11 @@ const CONFIG = {
   scanAlignTol: 0.95,        // 同组图形垂直错位上限（相对平均高度）
 };
 
-/* 三个形象：平面图 + 名字 */
+/* 三个形象：立体建模（FBX）+ 选项缩略图 + 名字 */
 const CHARS = {
-  v: { key:'v', name:'vv', img:'chars/v.png', accent:'#4A9EFF' },
-  a: { key:'a', name:'aa', img:'chars/a.png', accent:'#FF7A45' },
-  d: { key:'d', name:'dd', img:'chars/d.png', accent:'#FF8FAB' },
+  v: { key:'v', name:'vv', img:'chars/v.png', model:'models/ip_01_heart_static.fbx', accent:'#4A9EFF' },
+  a: { key:'a', name:'aa', img:'chars/a.png', model:'models/ip_02_bubble_static.fbx', accent:'#FF7A45' },
+  d: { key:'d', name:'dd', img:'chars/d.png', model:'models/ip_03_leaf_static.fbx', accent:'#FF8FAB' },
 };
 const CHAR_IMG = {};
 
@@ -468,6 +479,7 @@ const slotsEl = document.getElementById('slots');
 const tipEl   = document.getElementById('tip');
 const scanEl  = document.getElementById('scanSheet');
 const scanFrameEl = document.getElementById('scanFrame');
+const introEl = document.getElementById('intro');
 const resultEl= document.getElementById('result');
 const capEl   = document.getElementById('capture');
 const shotEl  = document.getElementById('shotSheet');
@@ -498,10 +510,12 @@ function resize(){
 
   const sp = G.sprite;
   sp.h = CONFIG.spriteHeight * S;
-  sp.w = sp.h * SPRITE_ASPECT;
+  sp.w = sp.h * (R3.ready ? R3.aspect : SPRITE_ASPECT);
   sp.y = groundY;
   sp.x  = clamp(sp.x  || W / 2, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
   sp.tx = clamp(sp.tx || W / 2, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+
+  updateR3Layout();
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 180));
@@ -512,7 +526,7 @@ const SPRITE_ASPECT = 2995 / 2363;   // 三张角色图的统一宽高比
    3. 状态
    ========================================================================= */
 const G = {
-  state: 'scan',            // scan | playing | over | capture
+  state: 'scan',            // scan | intro | playing | over | capture
   char: 'v',
   t: 0,
   score: 0,
@@ -531,6 +545,201 @@ const G = {
   sprite: { x: 0, y: 0, w: 96, h: 116, tx: 0, mood: 'idle', moodT: 0 },
 };
 const ANIM = { t: 0, bounce: 0, sink: 0 };
+
+/* =========================================================================
+   3.5 立体形象（three.js + FBX）
+   ========================================================================= */
+const R3 = {
+  ok: false, ready: false,
+  renderer: null, scene: null, camera: null, group: null,
+  visH: 1, visW: 1,
+  aspect: 2995 / 2363,
+  currentKey: null,
+  anim: { t: 0, bounce: 0, sink: 0 },
+};
+const modelCache = {};
+let threeLoading = null;
+
+function loadThreeScript(){
+  if(threeLoading) return threeLoading;
+  threeLoading = new Promise(resolve => {
+    if(window.THREE && window.FBXLoader){ resolve(true); return; }
+    const s = document.createElement('script');
+    s.src = 'vendor/three-fbx.min.js' + (window.ASSET_Q || '');
+    s.async = true;
+    s.onload  = () => resolve(!!(window.THREE && window.FBXLoader));
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+  return threeLoading;
+}
+
+function initR3(){
+  if(!window.THREE || R3.ok) return R3.ok;
+  try{
+    const canvas = document.getElementById('three');
+    R3.renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true, powerPreference:'high-performance' });
+  }catch(e){ return false; }
+
+  R3.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  if('outputColorSpace' in R3.renderer) R3.renderer.outputColorSpace = THREE.SRGBColorSpace;
+  R3.renderer.setClearAlpha(0);
+
+  R3.scene  = new THREE.Scene();
+  R3.camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  R3.camera.position.set(0, 0, 6);
+  R3.camera.lookAt(0, 0, 0);
+
+  /* 光从正面偏上来，给一点侧面补光：既能看出体积，又不会把材质组的接缝照成硬线 */
+  R3.scene.add(new THREE.AmbientLight(0xffffff, 1.05));
+  const key  = new THREE.DirectionalLight(0xffffff, 2.15); key.position.set(1.1, 2.0, 5.2);  R3.scene.add(key);
+  const side = new THREE.DirectionalLight(0xffffff, 0.95); side.position.set(-2.6, 0.6, 2.6); R3.scene.add(side);
+
+  R3.group = new THREE.Group();
+  R3.scene.add(R3.group);
+
+  R3.ok = true;
+  updateR3Layout();
+  return true;
+}
+
+function updateR3Layout(){
+  if(!R3.ok) return;
+  R3.renderer.setSize(W, H, false);
+  R3.camera.aspect = W / Math.max(H, 1);
+  R3.camera.updateProjectionMatrix();
+  const fovRad = R3.camera.fov * Math.PI / 180;
+  R3.visH = 2 * Math.tan(fovRad / 2) * R3.camera.position.z;
+  R3.visW = R3.visH * R3.camera.aspect;
+}
+
+function loadModel(key){
+  return new Promise(resolve => {
+    if(modelCache[key]){ applyModel(key); resolve(true); return; }
+    if(!R3.ok || !window.FBXLoader){ resolve(false); return; }
+
+    const loader = new FBXLoader();
+    loader.load(CHARS[key].model + (window.ASSET_Q || ''), obj => {
+      const box    = new THREE.Box3().setFromObject(obj);
+      const size   = new THREE.Vector3(); box.getSize(size);
+      const center = new THREE.Vector3(); box.getCenter(center);
+
+      // 归一化：高度 = 1，底部落在 y=0，水平居中
+      const s = 1 / Math.max(size.y, 1e-6);
+      obj.scale.setScalar(s);
+      obj.position.set(-center.x * s, -box.min.y * s, -center.z * s);
+
+      obj.traverse(o => {
+        if(o.isMesh){
+          o.frustumCulled = false;
+          o.castShadow = false; o.receiveShadow = false;
+
+          /* FBX 里一个 mesh 带 3 套材质 / 7 个 group（身体 + 眼睛 + 高光）。
+             逐组转成统一的 Standard 材质，但保留各组自己的颜色，避免眼睛被涂黑。 */
+          const srcArr = Array.isArray(o.material) ? o.material : [o.material];
+          const conv = src => {
+            const base = src && src.color ? src.color.clone() : new THREE.Color(0x14100E);
+            const lum = base.r * 0.299 + base.g * 0.587 + base.b * 0.114;
+            // 只有接近纯黑的身体才抬亮度，眼睛/高光这类浅色原样保留
+            if(lum < 0.12){
+              base.r = Math.min(1, base.r * 2.0 + 0.018);
+              base.g = Math.min(1, base.g * 2.0 + 0.016);
+              base.b = Math.min(1, base.b * 2.0 + 0.020);
+            }
+            const mtl = new THREE.MeshStandardMaterial({
+              color: base,
+              roughness: 0.74,
+              metalness: 0.02,
+            });
+            if(src && src.map){ mtl.map = src.map; mtl.needsUpdate = true; }
+            return mtl;
+          };
+          o.material = Array.isArray(o.material) ? srcArr.map(conv) : conv(srcArr[0]);
+        }
+      });
+
+      const holder = new THREE.Group();
+      holder.add(obj);
+      modelCache[key] = { holder, aspect: size.x / Math.max(size.y, 1e-6) };
+      applyModel(key);
+      resolve(true);
+    }, undefined, () => resolve(false));
+  });
+}
+
+function applyModel(key){
+  const c = modelCache[key];
+  if(!c || !R3.group) return;
+  while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
+  R3.group.add(c.holder);
+  R3.currentKey = key;
+  R3.aspect = c.aspect;
+  R3.ready = true;
+
+  // 判定盒宽度跟模型宽高比对齐
+  const sp = G.sprite;
+  sp.h = CONFIG.spriteHeight * S;
+  sp.w = sp.h * R3.aspect;
+  sp.x  = clamp(sp.x,  sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+  sp.tx = clamp(sp.tx, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+}
+
+function syncR3(dt){
+  if(!R3.ok || !R3.ready) return;
+
+  // 只在游戏进行中登场（扫描页 / 选择页 / 拍照页都不显示）
+  const visible = (G.state === 'playing');
+  R3.group.visible = visible;
+  if(!visible){
+    R3.renderer.render(R3.scene, R3.camera);
+    return;
+  }
+
+  const sp = G.sprite, a = R3.anim;
+  a.t += dt;
+  a.bounce = damp(a.bounce, 0, 6, dt);
+  a.sink   = damp(a.sink,   0, 5, dt);
+
+  const wx = (sp.x / W - 0.5) * R3.visW;
+  const wy = (0.5 - sp.y / H) * R3.visH;
+  const hW = (sp.h / H) * R3.visH;
+
+  const t = a.t;
+  let yOff   = Math.sin(t * 2.1) * 0.011 * hW;
+  let rotZ   = Math.sin(t * 1.1) * 0.020;
+  let rotY   = Math.sin(t * 0.75) * 0.10;
+  let scaleM = 1;
+
+  if(sp.mood === 'happy'){
+    yOff   += a.bounce * 0.34 * hW;
+    scaleM += a.bounce * 0.07;
+    rotZ   += Math.sin(t * 26) * 0.05 * a.bounce;
+  } else if(sp.mood === 'sad'){
+    yOff   -= a.sink * 0.05 * hW;
+    scaleM -= a.sink * 0.055;
+  }
+
+  if(G.stun > 0){
+    const k = clamp(G.stun / CONFIG.stunDuration, 0, 1);
+    rotZ += Math.sin(t * 31) * 0.17 * k;
+    yOff += Math.sin(t * 44) * 0.011 * hW * k;
+    rotY += Math.sin(t * 13) * 0.40 * k;
+  }
+
+  R3.group.position.set(wx, wy + yOff, 0);
+  R3.group.rotation.set(0, rotY, rotZ);
+  R3.group.scale.setScalar(hW * scaleM);
+
+  R3.renderer.render(R3.scene, R3.camera);
+}
+
+/* three 还没加载完时先记下来，加载完再补 */
+let pendingChar = null;
+function preloadModel(key){
+  if(!R3.ok){ pendingChar = key; return; }
+  if(modelCache[key]){ applyModel(key); return; }
+  loadModel(key);
+}
 
 /* =========================================================================
    4. 音效
@@ -616,7 +825,12 @@ function spawnBomb(){
     }
   }
   if(x === null || x < margin || x > W - margin){
-    x = rand(margin, W - margin);
+    // 兜底随机也要避开星星，别正好叠在星星身上变成躲不掉的必死位
+    let tries = 0;
+    do{
+      x = rand(margin, W - margin);
+      tries++;
+    } while(tries < 8 && G.items.some(it => it.kind === 'star' && Math.abs(it.x - x) < (it.r + r) * 1.15));
   }
   G.bombArmed = false;
 
@@ -963,7 +1177,7 @@ function drawItem(it){
   }
 }
 
-/* 形象本体：平面图 + 呼吸 / 弹跳 / 下沉 / 眩晕 */
+/* 形象本体：3D 就绪时交给 three 渲染，这里只画地面阴影、平面兜底、眩晕星星 */
 function drawSprite2D(){
   const sp = G.sprite;
   const w = sp.w, h = sp.h;
@@ -979,46 +1193,47 @@ function drawSprite2D(){
   ctx.fill();
   ctx.restore();
 
-  const t = ANIM.t;
-  let dy = Math.sin(t * 2.1) * 0.010 * h;
-  let sc = 1 + Math.sin(t * 2.1 + 1.2) * 0.008;
-  let rot = Math.sin(t * 1.1) * 0.014;
-
-  if(sp.mood === 'happy'){
-    dy  -= ANIM.bounce * 0.30 * h;
-    sc  += ANIM.bounce * 0.075;
-    rot += Math.sin(t * 26) * 0.05 * ANIM.bounce;
-  } else if(sp.mood === 'sad'){
-    dy  += ANIM.sink * 0.035 * h;
-    sc  -= ANIM.sink * 0.055;
-  }
-
-  if(G.stun > 0){
-    const k = clamp(G.stun / CONFIG.stunDuration, 0, 1);
-    rot += Math.sin(t * 31) * 0.16 * k;
-    dy  += Math.sin(t * 44) * 0.010 * h * k;
-  }
-
   const img = CHAR_IMG[G.char];
 
-  ctx.save();
-  ctx.translate(sp.x, sp.y + dy);
-  ctx.rotate(rot);
-  ctx.scale(sc, sc);
+  // 3D 未就绪（或加载失败）时用平面图顶上，避免精灵消失
+  if(!R3.ready){
+    const t = ANIM.t;
+    let dy = Math.sin(t * 2.1) * 0.010 * h;
+    let sc = 1 + Math.sin(t * 2.1 + 1.2) * 0.008;
+    let rot = Math.sin(t * 1.1) * 0.014;
 
-  if(img && img.complete && img.naturalWidth){
-    // 浅色描边光，保证深色实景里也看得见轮廓
-    ctx.shadowColor = 'rgba(255,255,255,.55)';
-    ctx.shadowBlur = 16 * S;
-    ctx.drawImage(img, -w/2, -h, w, h);
-    ctx.shadowBlur = 0;
-    ctx.drawImage(img, -w/2, -h, w, h);
-  } else {
-    ctx.fillStyle = '#1A1512';
-    roundRect(ctx, -w/2, -h, w, h, w*0.28);
-    ctx.fill();
+    if(sp.mood === 'happy'){
+      dy  -= ANIM.bounce * 0.30 * h;
+      sc  += ANIM.bounce * 0.075;
+      rot += Math.sin(t * 26) * 0.05 * ANIM.bounce;
+    } else if(sp.mood === 'sad'){
+      dy  += ANIM.sink * 0.035 * h;
+      sc  -= ANIM.sink * 0.055;
+    }
+    if(G.stun > 0){
+      const k = clamp(G.stun / CONFIG.stunDuration, 0, 1);
+      rot += Math.sin(t * 31) * 0.16 * k;
+      dy  += Math.sin(t * 44) * 0.010 * h * k;
+    }
+
+    ctx.save();
+    ctx.translate(sp.x, sp.y + dy);
+    ctx.rotate(rot);
+    ctx.scale(sc, sc);
+
+    if(img && img.complete && img.naturalWidth){
+      ctx.shadowColor = 'rgba(255,255,255,.55)';
+      ctx.shadowBlur = 16 * S;
+      ctx.drawImage(img, -w/2, -h, w, h);
+      ctx.shadowBlur = 0;
+      ctx.drawImage(img, -w/2, -h, w, h);
+    } else {
+      ctx.fillStyle = '#1A1512';
+      roundRect(ctx, -w/2, -h, w, h, w*0.28);
+      ctx.fill();
+    }
+    ctx.restore();
   }
-  ctx.restore();
 
   if(G.stun > 0){
     for(let i=0;i<3;i++){
@@ -1062,8 +1277,8 @@ function drawParticles(){
 
 function render(){
   ctx.clearRect(0, 0, W, H);
-  // 识别 / 拍照阶段画布留空，取景框里只显示摄像头画面
-  if(G.state === 'scan' || G.state === 'capture') return;
+  // 识别 / 选择 / 拍照阶段画布留空，取景框里只显示摄像头画面
+  if(G.state === 'scan' || G.state === 'intro' || G.state === 'capture') return;
   ctx.save();
   if(G.shake > 0){
     const m = G.shake * 12 * S;
@@ -1323,7 +1538,7 @@ function onScanSuccess(){
   scanBar.style.width = '100%';
   scanDbg.textContent = '识别成功';
   toast('识别成功');
-  setTimeout(() => { if(G.state === 'scan') enterGame(); }, 420);
+  setTimeout(() => { if(G.state === 'scan') showIntro(); }, 420);
 }
 
 /* =========================================================================
@@ -1427,12 +1642,13 @@ function resetGame(){
 async function bootScan(){
   G.state = 'scan';
   scanEl.classList.remove('hide');
+  introEl.classList.add('hide');
   resultEl.classList.add('hide');
   shotEl.classList.add('hide');
   capEl.classList.add('hide');
   document.body.classList.remove('playing');
   scanBar.style.width = '0%';
-  scanDbg.textContent = '正在开启摄像头…';
+  scanDbg.textContent = '';
   SCAN.hits = 0;
 
   const ok = await openCam();
@@ -1443,19 +1659,35 @@ async function bootScan(){
     return;
   }
   camFailBtn.hidden = true;
-  scanDbg.textContent = '对准墙上的图形…';
+  scanDbg.textContent = '';
   SCAN.running = true;
+}
+
+/* 扫描成功 → 挑选角色页 */
+function showIntro(){
+  G.state = 'intro';
+  SCAN.running = false;
+  scanEl.classList.add('hide');
+  resultEl.classList.add('hide');
+  shotEl.classList.add('hide');
+  capEl.classList.add('hide');
+  introEl.classList.remove('hide');
+  document.body.classList.remove('playing');
+  // 选择页就开始拉模型，进游戏时已就绪
+  preloadModel(G.char);
 }
 
 function enterGame(){
   SCAN.running = false;
   scanEl.classList.add('hide');
+  introEl.classList.add('hide');
   resultEl.classList.add('hide');
   shotEl.classList.add('hide');
   capEl.classList.add('hide');
   document.body.classList.add('playing');
   resetGame();
   G.state = 'playing';
+  preloadModel(G.char);
 }
 
 async function prepareAndPlay(){
@@ -1500,8 +1732,14 @@ const shotImg  = document.getElementById('shotImg');
 const saveBtn  = document.getElementById('saveBtn');
 let shotDataUrl = '';
 
+/* 有模板就按模板里的照片位放；没有模板时铺满整张，不留白边 */
+function currentSlot(){
+  if(TEMPLATE.src && TEMPLATE.slot) return TEMPLATE.slot;
+  return { x: 0, y: 0, w: 1, h: 1 };
+}
+
 function layoutCapSlot(){
-  const s = TEMPLATE.slot;
+  const s = currentSlot();
   capSlot.style.left   = (s.x * 100) + '%';
   capSlot.style.top    = (s.y * 100) + '%';
   capSlot.style.width  = (s.w * 100) + '%';
@@ -1511,11 +1749,13 @@ function layoutCapSlot(){
     capTpl.src = TEMPLATE.src + (window.ASSET_Q || '');
     capTpl.style.display = 'block';
     capSlot.classList.add('has-tpl');
+    capSlot.classList.remove('full');
     capHint.style.display = 'none';
   } else {
     capTpl.style.display = 'none';
     capSlot.classList.remove('has-tpl');
-    capHint.style.display = 'block';
+    capSlot.classList.add('full');
+    capHint.style.display = 'none';
   }
 }
 
@@ -1532,12 +1772,14 @@ async function openCapture(){
   if(!ok) toast('前置摄像头打不开，仍可拍摄');
 }
 
-function closeCapture(){
+async function closeCapture(){
   closeSelfie();
   capEl.classList.add('hide');
   shotEl.classList.add('hide');
   resultEl.classList.remove('hide');
   G.state = 'over';
+  // 拍照时为了给前置摄像头让路把后摄关了，回来要恢复实景背景
+  if(!camStream && !camStarting) await openCam();
 }
 
 /* 把预览区合成成一张图 */
@@ -1562,10 +1804,11 @@ function shoot(){
     g.drawImage(capTpl, (outW-dw)/2, (outH-dh)/2, dw, dh);
   }
 
-  const sx = outW * TEMPLATE.slot.x;
-  const sy = outH * TEMPLATE.slot.y;
-  const sw = outW * TEMPLATE.slot.w;
-  const sh = outH * TEMPLATE.slot.h;
+  const slot = currentSlot();
+  const sx = outW * slot.x;
+  const sy = outH * slot.y;
+  const sw = outW * slot.w;
+  const sh = outH * slot.h;
 
   g.save();
   g.beginPath();
@@ -1637,6 +1880,7 @@ function loop(ts){
 
   if(G.state === 'scan') updateScan(dt);
 
+  syncR3(dt);
   safeRender();
   requestAnimationFrame(loop);
 }
@@ -1650,9 +1894,11 @@ document.querySelectorAll('.pick').forEach(el => {
     el.classList.add('sel');
     G.char = el.dataset.char;
     ensureAudio();
+    preloadModel(G.char);
   });
 });
 
+document.getElementById('startBtn').addEventListener('click', () => { prepareAndPlay(); });
 document.getElementById('againBtn').addEventListener('click', () => { prepareAndPlay(); });
 document.getElementById('shotBtn').addEventListener('click', () => { openCapture(); });
 document.getElementById('capBack').addEventListener('click', () => { closeCapture(); });
@@ -1692,7 +1938,16 @@ G.sprite.tx = W/2;
 requestAnimationFrame(loop);
 bootScan();
 
-window.__GAME = { G, CONFIG, CHARS, TEMPLATE, SCAN, ANIM, enterGame, prepareAndPlay, analyzeMarker, bootScan, openCapture, shoot };
+/* 3D 资源后置加载，不阻塞扫描；加载好再把形象换成建模 */
+loadThreeScript().then(ok => {
+  if(!ok) return;
+  if(!initR3()) return;
+  preloadModel(pendingChar || G.char);
+});
+
+window.__GAME = { G, CONFIG, CHARS, TEMPLATE, SCAN, ANIM, R3, modelCache,
+                  enterGame, prepareAndPlay, showIntro, analyzeMarker, bootScan,
+                  openCapture, shoot, scanSuccess: onScanSuccess };
 })();
 </script>
 </body>
