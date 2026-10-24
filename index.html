@@ -1,0 +1,1644 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#120E1A">
+<title>接住星星 · AR 互动原型</title>
+<style>
+  :root{
+    --orange:#FF7A45;
+    --pink:#FF8FAB;
+    --blue:#4A9EFF;
+    --cream:#FFF4E6;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{
+    height:100%;overflow:hidden;background:#120E1A;
+    font-family:system-ui,-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    color:#fff;user-select:none;-webkit-user-select:none;
+  }
+  #stage{position:fixed;inset:0;overflow:hidden;background:#120E1A}
+
+  /* ---------- 背景 ---------- */
+  #fallback{
+    position:absolute;inset:0;
+    background:radial-gradient(120% 85% at 50% -5%, #33284A 0%, #1E1730 42%, #130F1C 100%);
+  }
+  #fallback::before{
+    content:'';position:absolute;left:-30%;right:-30%;bottom:0;height:56%;
+    background-image:
+      linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px);
+    background-size:52px 52px;
+    transform:perspective(340px) rotateX(64deg);
+    transform-origin:bottom center;
+    -webkit-mask-image:linear-gradient(transparent, #000 52%);
+    mask-image:linear-gradient(transparent, #000 52%);
+  }
+  #fallback::after{
+    content:'';position:absolute;left:50%;bottom:-14%;width:130%;height:62%;
+    transform:translateX(-50%);pointer-events:none;
+    background:radial-gradient(ellipse at 50% 100%, rgba(255,122,69,.28), rgba(74,158,255,.10) 42%, transparent 66%);
+  }
+  #cam{
+    position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+    display:none;filter:saturate(1.04) brightness(.85);
+    z-index:1;
+  }
+  #camMask{
+    position:absolute;inset:0;display:none;pointer-events:none;z-index:2;
+    background:linear-gradient(180deg, rgba(15,11,22,.62) 0%, rgba(15,11,22,.14) 32%, rgba(15,11,22,.10) 62%, rgba(15,11,22,.66) 100%);
+  }
+  body.cam-on #cam,body.cam-on #camMask{display:block}
+  body.cam-on #fallback{display:none}
+
+  /* ---------- 画布层 ---------- */
+  canvas#three{
+    position:absolute;inset:0;width:100%;height:100%;
+    pointer-events:none;z-index:3;display:block;
+  }
+  canvas#game{
+    position:absolute;inset:0;width:100%;height:100%;
+    touch-action:none;z-index:4;display:block;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:absolute;left:0;right:0;top:0;
+    padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 0;
+    display:flex;flex-direction:column;align-items:center;gap:10px;
+    pointer-events:none;z-index:6;
+    opacity:0;transition:opacity .35s ease;
+  }
+  body.playing #hud{opacity:1}
+  #slots{display:flex;gap:8px}
+  .slot{
+    width:28px;height:28px;border-radius:9px;
+    background:rgba(255,255,255,.10);
+    border:1.5px solid rgba(255,255,255,.22);
+    display:grid;place-items:center;
+    transition:transform .28s cubic-bezier(.34,1.56,.64,1), background .2s, border-color .2s;
+  }
+  .slot svg{width:16px;height:16px;opacity:.25;transition:opacity .2s}
+  .slot.on{
+    background:linear-gradient(160deg,#FFC24A,#FF8A2B);
+    border-color:#FFD98A;
+    box-shadow:0 4px 14px rgba(255,150,50,.45);
+    transform:scale(1.12);
+  }
+  .slot.on svg{opacity:1}
+  #tip{
+    font-size:12.5px;letter-spacing:.06em;color:rgba(255,255,255,.5);
+    padding:5px 12px;border-radius:99px;background:rgba(255,255,255,.06);
+  }
+
+  /* ---------- 覆盖页 ---------- */
+  .sheet{
+    position:absolute;inset:0;z-index:20;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(env(safe-area-inset-top,0px) + 24px) 26px calc(env(safe-area-inset-bottom,0px) + 24px);
+    text-align:center;
+    background:rgba(14,10,20,.82);
+    -webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
+    transition:opacity .3s ease, visibility .3s;
+  }
+  .sheet.clear{background:transparent;-webkit-backdrop-filter:none;backdrop-filter:none}
+  .sheet.hide{opacity:0;visibility:hidden;pointer-events:none}
+
+  .badge{
+    font-size:11px;letter-spacing:.28em;text-transform:uppercase;
+    color:rgba(255,255,255,.42);margin-bottom:18px;
+  }
+  h1{font-size:clamp(26px,7.2vmin,40px);font-weight:800;letter-spacing:.02em;line-height:1.22}
+  h1 em{font-style:normal;color:var(--orange)}
+  .sub{
+    margin-top:12px;font-size:13.5px;line-height:1.85;
+    color:rgba(255,255,255,.52);max-width:300px;
+  }
+
+  #pickers{display:flex;gap:14px;margin:26px 0 4px}
+  .pick{
+    width:70px;height:82px;border-radius:20px;
+    border:2px solid rgba(255,255,255,.14);
+    background:rgba(255,255,255,.05);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+    cursor:pointer;transition:all .22s cubic-bezier(.34,1.56,.64,1);
+  }
+  .pick .dot{
+    width:30px;height:30px;border-radius:10px;
+    box-shadow:inset 0 -4px 0 rgba(0,0,0,.18);
+    background:#111;
+  }
+  .pick span{font-size:10px;color:rgba(255,255,255,.42);letter-spacing:.04em;line-height:1.3}
+  .pick.sel{
+    border-color:rgba(255,255,255,.72);
+    background:rgba(255,255,255,.13);
+    transform:translateY(-4px);
+    box-shadow:0 10px 24px rgba(0,0,0,.35);
+  }
+  .pick.sel span{color:#fff}
+
+  .btn{
+    margin-top:28px;
+    padding:16px 52px;border:none;border-radius:99px;
+    font-size:16.5px;font-weight:700;letter-spacing:.06em;
+    color:#2A1408;cursor:pointer;
+    background:linear-gradient(160deg,#FFD06B,#FF8A2B 62%,#FF6B35);
+    box-shadow:0 10px 28px rgba(255,124,50,.42), inset 0 1px 0 rgba(255,255,255,.5);
+    transition:transform .16s ease, box-shadow .22s;
+    font-family:inherit;
+  }
+  .btn:active{transform:scale(.96);box-shadow:0 5px 16px rgba(255,124,50,.34)}
+  .btn.ghost{
+    background:rgba(255,255,255,.10);color:#fff;border:1.5px solid rgba(255,255,255,.22);
+    box-shadow:none;padding:13px 30px;font-size:13.5px;font-weight:600;margin-top:16px;
+  }
+  .btn.ghost:active{background:rgba(255,255,255,.18)}
+
+  /* ---------- 扫描页 ---------- */
+  #scanSheet{justify-content:space-between;padding-top:calc(env(safe-area-inset-top,0px) + 40px)}
+  .scanHead{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .scanHead .badge{margin-bottom:0}
+  .scanHead p{font-size:13px;color:rgba(255,255,255,.55);line-height:1.7}
+  #scanFrame{
+    position:relative;width:min(62vmin,270px);height:min(62vmin,270px);
+    border-radius:32px;
+    border:2px solid rgba(255,255,255,.30);
+    box-shadow:0 0 0 9999px rgba(10,7,16,.34), inset 0 0 40px rgba(255,180,90,.06);
+    display:grid;place-items:center;
+  }
+  #scanFrame i.c{
+    position:absolute;width:34px;height:34px;border:3px solid rgba(255,214,140,.9);border-radius:6px;
+  }
+  #scanFrame i.tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:12px 0 0 0}
+  #scanFrame i.tr{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 12px 0 0}
+  #scanFrame i.bl{bottom:-2px;left:-2px;border-right:0;border-top:0;border-radius:0 0 0 12px}
+  #scanFrame i.br{bottom:-2px;right:-2px;border-left:0;border-top:0;border-radius:0 0 12px 0}
+  #scanLine{
+    position:absolute;left:10%;right:10%;height:2px;
+    background:linear-gradient(90deg,transparent,rgba(255,200,120,.9),transparent);
+    box-shadow:0 0 18px rgba(255,180,90,.8);
+    animation:scanSweep 2.2s ease-in-out infinite;
+  }
+  @keyframes scanSweep{
+    0%{top:12%;opacity:0}
+    18%{opacity:1}
+    82%{opacity:1}
+    100%{top:88%;opacity:0}
+  }
+  #scanBarWrap{
+    width:min(62vmin,270px);height:6px;border-radius:99px;
+    background:rgba(255,255,255,.12);overflow:hidden;margin-top:18px;
+  }
+  #scanBar{
+    height:100%;width:0%;border-radius:99px;
+    background:linear-gradient(90deg,#FFC24A,#FF7A45);
+    transition:width .12s linear;
+  }
+  #scanDebug{
+    font-size:10.5px;color:rgba(255,255,255,.32);
+    font-family:ui-monospace,Menlo,monospace;
+    margin-top:10px;letter-spacing:.02em;min-height:14px;
+  }
+  .scanFoot{display:flex;flex-direction:column;align-items:center;gap:4px;width:100%}
+
+  /* ---------- 结算 ---------- */
+  #resultTitle{font-size:clamp(22px,6vmin,30px);font-weight:800;margin-bottom:6px}
+  #resultStars{display:flex;gap:6px;justify-content:center;margin:14px 0 22px}
+  #resultStars .rs{width:22px;height:22px;opacity:.18}
+  #resultStars .rs.on{opacity:1}
+  #photoCard{
+    width:min(300px,84vw);
+    border-radius:22px;padding:22px 20px 20px;
+    background:linear-gradient(165deg,rgba(255,255,255,.14),rgba(255,255,255,.05));
+    border:1.5px solid rgba(255,255,255,.16);
+    box-shadow:0 18px 44px rgba(0,0,0,.42);
+    position:relative;overflow:hidden;
+  }
+  #photoCard::after{
+    content:'';position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(120% 90% at 50% 0%, rgba(255,255,255,.14), transparent 58%);
+  }
+  #photoInner{
+    border-radius:14px;padding:20px 12px 16px;
+    background:rgba(10,7,16,.34);
+    border:1px solid rgba(255,255,255,.09);
+  }
+  #photoMiss{font-size:12px;color:rgba(255,255,255,.36);margin-top:10px;line-height:1.7}
+  #photoTag{
+    position:absolute;top:12px;right:14px;z-index:2;
+    font-size:10px;letter-spacing:.16em;padding:4px 9px;border-radius:99px;
+    background:rgba(255,255,255,.14);color:rgba(255,255,255,.8);
+  }
+  .figures{display:flex;justify-content:center;align-items:flex-end;gap:10px}
+  .fig{
+    width:56px;border-radius:16px 16px 12px 12px;
+    display:grid;place-items:end center;
+    font-size:15px;font-weight:800;color:rgba(255,255,255,.9);
+    padding-bottom:9px;
+    box-shadow:inset 0 -6px 0 rgba(0,0,0,.16), 0 8px 18px rgba(0,0,0,.28);
+    animation:pop .42s cubic-bezier(.34,1.56,.64,1) backwards;
+  }
+  .fig:nth-child(1){height:66px;animation-delay:.05s}
+  .fig:nth-child(2){height:80px;animation-delay:.13s}
+  .fig:nth-child(3){height:92px;animation-delay:.21s}
+  @keyframes pop{from{opacity:0;transform:translateY(14px) scale(.8)}to{opacity:1;transform:none}}
+  .hintRow{
+    display:flex;gap:18px;margin-top:22px;
+    font-size:11.5px;color:rgba(255,255,255,.3);letter-spacing:.05em;
+  }
+
+  /* ---------- 杂项 ---------- */
+  #arToggle{
+    position:absolute;z-index:15;
+    top:calc(env(safe-area-inset-top,0px) + 12px);right:12px;
+    width:40px;height:40px;border-radius:13px;
+    border:1px solid rgba(255,255,255,.16);
+    background:rgba(255,255,255,.08);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    color:rgba(255,255,255,.72);font-size:10px;font-weight:600;
+    display:grid;place-items:center;cursor:pointer;letter-spacing:.06em;
+    transition:all .2s;font-family:inherit;
+  }
+  #arToggle.on{background:rgba(74,158,255,.28);border-color:rgba(120,180,255,.55);color:#fff}
+  body.playing #arToggle{opacity:.35}
+
+  #toast{
+    position:absolute;z-index:30;left:50%;bottom:14%;transform:translate(-50%,10px);
+    padding:10px 18px;border-radius:99px;font-size:12.5px;
+    background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);
+    -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);
+    opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  #crash{
+    position:absolute;z-index:99;left:12px;right:12px;
+    bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+    padding:10px 14px;border-radius:12px;
+    background:rgba(214,58,48,.94);color:#fff;
+    font-size:12px;line-height:1.55;word-break:break-all;
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="fallback"></div>
+  <video id="cam" playsinline muted autoplay></video>
+  <div id="camMask"></div>
+
+  <canvas id="three"></canvas>
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div id="slots"></div>
+    <div id="tip">拖动屏幕移动小精灵</div>
+  </div>
+
+  <button id="arToggle" type="button">AR</button>
+  <div id="toast"></div>
+
+  <!-- 开场 -->
+  <div class="sheet" id="intro">
+    <div class="badge">AR · 课程互动原型</div>
+    <h1>接住<em>星星</em></h1>
+    <p class="sub">拖动小精灵，躲开炸弹，把 5 颗星星全部收下。<br>接到的星星越多，合照里的伙伴就越多。</p>
+
+    <div id="pickers">
+      <button class="pick sel" data-char="v" type="button">
+        <i class="dot" style="background:#111"></i><span>Heart<br>装酷</span>
+      </button>
+      <button class="pick" data-char="a" type="button">
+        <i class="dot" style="background:#111"></i><span>Bubble<br>热情</span>
+      </button>
+      <button class="pick" data-char="d" type="button">
+        <i class="dot" style="background:#111"></i><span>Leaf<br>腼腆</span>
+      </button>
+    </div>
+
+    <button class="btn" id="startBtn" type="button">开始</button>
+  </div>
+
+  <!-- 扫描识别 -->
+  <div class="sheet clear hide" id="scanSheet">
+    <div class="scanHead">
+      <div class="badge">STEP 1 · 识别墙面图形</div>
+      <p>把墙上发光的图形<br>对准下面的取景框</p>
+    </div>
+
+    <div id="scanFrame">
+      <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+      <div id="scanLine"></div>
+    </div>
+
+    <div class="scanFoot">
+      <div id="scanBarWrap"><div id="scanBar"></div></div>
+      <div id="scanDebug"></div>
+      <button class="btn ghost" id="skipScan" type="button">没找到？直接开始</button>
+    </div>
+  </div>
+
+  <!-- 结算 -->
+  <div class="sheet hide" id="result">
+    <div id="resultTitle">收集完成</div>
+    <div id="resultStars"></div>
+
+    <div id="photoCard">
+      <div id="photoTag">合照模板</div>
+      <div id="photoInner">
+        <div class="figures" id="figures"></div>
+        <div id="photoMiss"></div>
+      </div>
+    </div>
+
+    <button class="btn ghost" id="againBtn" type="button">再玩一次</button>
+    <div class="hintRow">
+      <span>1 星 · 单人</span>
+      <span>2 星 · 双人</span>
+      <span>3 星以上 · 三人</span>
+    </div>
+  </div>
+</div>
+
+<script>
+/* 线上分享链接带 sharecode，网关只放行带该参数的请求；
+   静态资源需要在 URL 上同一份参数，否则会被拦成 403。 */
+(function(){
+  var m = /[?&]sharecode=([^&]+)/.exec(location.search || '');
+  window.ASSET_Q = m ? '?sharecode=' + m[1] : '';
+  document.write('<script src="vendor/three-fbx.min.js' + window.ASSET_Q + '"><\/script>');
+})();
+</script>
+<script>
+(function(){
+'use strict';
+
+/* =========================================================================
+   1. 配置
+   ========================================================================= */
+const CONFIG = {
+  starTotal: 5,
+  firstStarDelay: 0.7,
+
+  starGapFrom: 3.0,
+  starGapTo:   2.0,
+  starGapJitter: 0.4,
+
+  starFallFrom: 2.75,
+  starFallTo:   2.05,
+
+  bombStartAfterStar: 2,
+  bombGapFrom: 2.8,
+  bombGapTo:   1.6,
+  bombGapJitter: 0.4,
+  bombFallFrom: 2.6,
+  bombFallTo:   1.9,
+  stunDuration: 1.45,
+
+  // ★ 需求1：炸弹贴着星星生成
+  bombBesideChance: 0.85,     // 有多大概率贴着最近那颗星星
+  bombBesideMin: 58,          // 与星星的最小水平间距（基准px）
+  bombBesideMax: 102,         // 最大水平间距
+  bombDelayMin: 0.22,         // 星星生成后多久放出伴生炸弹（秒）
+  bombDelayMax: 0.45,
+
+  followStiffness: 21,
+  keySpeed: 720,
+  spriteWidth: 96,
+  spriteHeight: 104,
+  groundRatio: 0.85,
+  catchTolerance: 0.92,
+
+  // 扫描识别（黑色徽标 + 暖色背光）
+  scanNeed: 14,               // 连续命中帧数（约 1.2s）
+  scanInterval: 0.09,         // 检测间隔（秒）
+  scanDarkLum: 30,            // 只有真正的黑（灯箱徽标）才计入
+  scanMinAreaPct: 1.0,
+  scanMaxAreaPct: 45,
+  scanMinFill: 0.50,
+  scanSingleMinArea: 4.0,     // 单块通过的最小面积
+  scanSingleMinFill: 0.62,
+  scanPairAreaRatio: 1.8,     // 成对匹配：两块面积比上限
+  scanPairAlign: 0.6,         // 成对匹配：垂直中心差 / 块高
+};
+
+/* 三个形象 —— 与 FBX 模型一一对应 */
+const CHARS = {
+  v: { key:'v', letter:'V', label:'Heart',  trait:'装酷', model:'models/ip_01_heart_static.fbx',  color:'#4A9EFF', light:'#84C0FF', dark:'#2C79D6' },
+  a: { key:'a', letter:'A', label:'Bubble', trait:'热情', model:'models/ip_02_bubble_static.fbx', color:'#FF7A45', light:'#FFA57C', dark:'#D9531F' },
+  d: { key:'d', letter:'D', label:'Leaf',   trait:'腼腆', model:'models/ip_03_leaf_static.fbx',   color:'#FF8FAB', light:'#FFB8CA', dark:'#DE6885' },
+};
+
+function photoTier(score){
+  if(score <= 1) return { chars:['v'],          name:'单人合照',       note:'下次多接几颗，伙伴就来了' };
+  if(score === 2) return { chars:['v','a'],     name:'双人合照',       note:'再来一颗就能凑齐三个' };
+  if(score === 3) return { chars:['v','a','d'], name:'三人合照',       note:'' };
+  if(score === 4) return { chars:['v','a','d'], name:'三人合照',       note:'差一点点就满星' };
+  return             { chars:['v','a','d'], name:'三人合照 · 满星', note:'' };
+}
+
+/* =========================================================================
+   2. 基础
+   ========================================================================= */
+const cvs     = document.getElementById('game');
+const ctx     = cvs.getContext('2d');
+const stage   = document.getElementById('stage');
+const slotsEl = document.getElementById('slots');
+const tipEl   = document.getElementById('tip');
+const introEl = document.getElementById('intro');
+const scanEl  = document.getElementById('scanSheet');
+const resultEl= document.getElementById('result');
+const arBtn   = document.getElementById('arToggle');
+const toastEl = document.getElementById('toast');
+const camEl   = document.getElementById('cam');
+const scanBar = document.getElementById('scanBar');
+const scanDbg = document.getElementById('scanDebug');
+
+let W = 0, H = 0, S = 1, groundY = 0;
+
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const rand  = (a,b) => a + Math.random() * (b - a);
+const lerp  = (a,b,t) => a + (b - a) * t;
+const damp  = (cur,target,speed,dt) => lerp(cur, target, 1 - Math.exp(-speed * dt));
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = stage.clientWidth;
+  H = stage.clientHeight;
+  cvs.width  = Math.round(W * dpr);
+  cvs.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  S = clamp(Math.min(W / 390, H / 700), 0.72, 1.65);
+  groundY = H * CONFIG.groundRatio;
+
+  const sp = G.sprite;
+  sp.h = CONFIG.spriteHeight * S;
+  sp.w = sp.h * (R3.aspect || 1.0);
+  sp.y = groundY;
+  sp.x  = clamp(sp.x  || W / 2, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+  sp.tx = clamp(sp.tx || W / 2, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+
+  updateR3Layout();
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 180));
+
+/* =========================================================================
+   3. 游戏状态
+   ========================================================================= */
+const G = {
+  state: 'intro',            // intro | scan | loading | playing | over
+  char: 'v',
+  t: 0,
+  score: 0,
+  hits: 0,
+  spawned: 0,
+  resolved: 0,
+  nextStarIn: 0,
+  nextBombIn: 0,
+  bombArmed: false,
+  endDelay: -1,
+  shake: 0,
+  stun: 0,
+  items: [],
+  particles: [],
+  ripples: [],
+  sprite: { x: 0, y: 0, w: 96, h: 104, tx: 0, mood: 'idle', moodT: 0, squash: 0 },
+};
+
+/* =========================================================================
+   4. 3D 形象
+   ========================================================================= */
+const R3 = {
+  ok: false, ready: false,
+  renderer: null, scene: null, camera: null, group: null, halo: null,
+  visH: 1, visW: 1,
+  aspect: 1.0,
+  currentKey: null,
+  anim: { t: 0, bounce: 0, sink: 0 },
+};
+const modelCache = {};
+
+function makeHaloTexture(){
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(128,128,4,128,128,127);
+  grd.addColorStop(0,   'rgba(255,222,168,0.98)');
+  grd.addColorStop(0.22,'rgba(255,186,108,0.72)');
+  grd.addColorStop(0.46,'rgba(255,158,72,0.32)');
+  grd.addColorStop(0.72,'rgba(255,140,50,0.10)');
+  grd.addColorStop(1,   'rgba(255,130,40,0)');
+  g.fillStyle = grd;
+  g.fillRect(0,0,256,256);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function initR3(){
+  if(!window.THREE) return;
+  try{
+    const canvas = document.getElementById('three');
+    R3.renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true, powerPreference:'high-performance' });
+  }catch(e){ return; }
+
+  R3.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  if('outputColorSpace' in R3.renderer) R3.renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  R3.scene  = new THREE.Scene();
+  R3.camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  R3.camera.position.set(0, 0, 6);
+  R3.camera.lookAt(0, 0, 0);
+
+  R3.scene.add(new THREE.AmbientLight(0xffffff, 1.3));
+  const key  = new THREE.DirectionalLight(0xffffff, 2.4); key.position.set(1.2, 2.6, 4.2);  R3.scene.add(key);
+  const rim  = new THREE.DirectionalLight(0xffb877, 2.0); rim.position.set(-2.4, 0.8, -2.0); R3.scene.add(rim);
+  const fill = new THREE.DirectionalLight(0x8fb4ff, 0.8); fill.position.set(-1.6, -1.2, 3.2); R3.scene.add(fill);
+
+  R3.halo = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: makeHaloTexture(), transparent: true, depthWrite: false,
+    blending: THREE.AdditiveBlending, opacity: 0.34,
+  }));
+  R3.halo.visible = false;
+  R3.scene.add(R3.halo);
+
+  R3.group = new THREE.Group();
+  R3.scene.add(R3.group);
+
+  R3.ok = true;
+  updateR3Layout();
+}
+
+function updateR3Layout(){
+  if(!R3.ok) return;
+  R3.renderer.setSize(W, H, false);
+  R3.camera.aspect = W / Math.max(H, 1);
+  R3.camera.updateProjectionMatrix();
+  const fovRad = R3.camera.fov * Math.PI / 180;
+  R3.visH = 2 * Math.tan(fovRad / 2) * R3.camera.position.z;
+  R3.visW = R3.visH * R3.camera.aspect;
+}
+
+function loadModel(key){
+  return new Promise((resolve, reject) => {
+    if(modelCache[key]){ applyModel(key); resolve(); return; }
+    if(!window.THREE || !window.FBXLoader){ reject(new Error('THREE 未加载')); return; }
+
+    const loader = new FBXLoader();
+    loader.load(CHARS[key].model + (window.ASSET_Q || ''), obj => {
+      const box    = new THREE.Box3().setFromObject(obj);
+      const size   = new THREE.Vector3(); box.getSize(size);
+      const center = new THREE.Vector3(); box.getCenter(center);
+
+      // 归一化：高度 = 1，底部落在 y=0，水平居中
+      const s = 1 / Math.max(size.y, 1e-6);
+      obj.scale.setScalar(s);
+      obj.position.set(-center.x * s, -box.min.y * s, -center.z * s);
+
+      obj.traverse(o => {
+        if(o.isMesh){
+          o.frustumCulled = false;
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach(m => { if(m){ m.side = THREE.FrontSide; m.needsUpdate = true; } });
+        }
+      });
+
+      const holder = new THREE.Group();
+      holder.add(obj);
+      modelCache[key] = { holder, aspect: size.x / Math.max(size.y, 1e-6) };
+      applyModel(key);
+      resolve();
+    }, undefined, err => reject(err));
+  });
+}
+
+function applyModel(key){
+  const c = modelCache[key];
+  if(!c || !R3.group) return;
+  while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
+  R3.group.add(c.holder);
+  R3.currentKey = key;
+  R3.aspect = c.aspect;
+  R3.ready = true;
+  R3.halo.visible = true;
+
+  // 判定盒宽度跟模型宽高比对齐
+  const sp = G.sprite;
+  sp.h = CONFIG.spriteHeight * S;
+  sp.w = sp.h * R3.aspect;
+  sp.x  = clamp(sp.x,  sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+  sp.tx = clamp(sp.tx, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+}
+
+function syncR3(dt){
+  if(!R3.ok || !R3.ready) return;
+
+  // 只在游戏进行中登场（扫描页 / 开场页不显示）
+  const visible = (G.state === 'playing');
+  R3.group.visible = visible;
+  R3.halo.visible = visible;
+  if(!visible){
+    R3.renderer.render(R3.scene, R3.camera);
+    return;
+  }
+
+  const sp = G.sprite, a = R3.anim;
+  a.t += dt;
+
+  a.bounce = damp(a.bounce, 0, 6, dt);
+  a.sink   = damp(a.sink,   0, 5, dt);
+
+  const wx = (sp.x / W - 0.5) * R3.visW;
+  const wy = (0.5 - sp.y / H) * R3.visH;
+  const hW = (sp.h / H) * R3.visH;
+
+  const t = a.t;
+  let yOff   = Math.sin(t * 2.1) * 0.011 * hW;
+  let rotZ   = Math.sin(t * 1.1) * 0.020;
+  let rotY   = Math.sin(t * 0.75) * 0.10;
+  let scaleM = 1;
+
+  if(sp.mood === 'happy'){
+    yOff   += a.bounce * 0.34 * hW;
+    scaleM += a.bounce * 0.07;
+    rotZ   += Math.sin(t * 26) * 0.05 * a.bounce;
+  } else if(sp.mood === 'sad'){
+    yOff   -= a.sink * 0.05 * hW;
+    scaleM -= a.sink * 0.055;
+  }
+
+  if(G.stun > 0){
+    const k = clamp(G.stun / CONFIG.stunDuration, 0, 1);
+    rotZ += Math.sin(t * 31) * 0.17 * k;
+    yOff += Math.sin(t * 44) * 0.011 * hW * k;
+    rotY += Math.sin(t * 13) * 0.40 * k;
+  }
+
+  R3.group.position.set(wx, wy + yOff, 0);
+  R3.group.rotation.set(0, rotY, rotZ);
+  R3.group.scale.setScalar(hW * scaleM);
+
+  R3.halo.position.set(wx, wy + hW * 0.50, -0.5);
+  const hs = hW * 2.55;
+  R3.halo.scale.set(hs, hs, 1);
+  R3.halo.material.opacity = 0.42 + Math.sin(t * 1.7) * 0.06 + (G.stun > 0 ? 0.22 : 0);
+
+  R3.renderer.render(R3.scene, R3.camera);
+}
+
+/* =========================================================================
+   5. 音效
+   ========================================================================= */
+let AC = null;
+function ensureAudio(){
+  if(!AC){
+    try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ AC = null; }
+  }
+  if(AC && AC.state === 'suspended') AC.resume();
+}
+function tone(o){
+  if(!AC) return;
+  const { freq=440, to=null, dur=.12, type='sine', gain=.06, delay=0 } = o || {};
+  const t0 = AC.currentTime + delay;
+  const osc = AC.createOscillator(), g = AC.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if(to) osc.frequency.exponentialRampToValueAtTime(Math.max(to,1), t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.linearRampToValueAtTime(gain, t0 + .014);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g).connect(AC.destination);
+  osc.start(t0); osc.stop(t0 + dur + .03);
+}
+function noiseBurst(dur=.3, gain=.12){
+  if(!AC) return;
+  const n = Math.floor(AC.sampleRate * dur);
+  const buf = AC.createBuffer(1, n, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, 2.4);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const flt = AC.createBiquadFilter(); flt.type='lowpass'; flt.frequency.value = 1100;
+  const g = AC.createGain(); g.gain.value = gain;
+  src.connect(flt).connect(g).connect(AC.destination);
+  src.start();
+}
+const SFX = {
+  catchStar(){ tone({freq:880,to:1320,dur:.13,gain:.065}); tone({freq:1320,to:1760,dur:.11,gain:.05,delay:.055}); },
+  bomb(){ noiseBurst(.34,.16); tone({freq:150,to:48,dur:.32,type:'sawtooth',gain:.09}); },
+  miss(){ tone({freq:300,to:170,dur:.16,type:'triangle',gain:.05}); },
+  lock(){ tone({freq:660,dur:.12,gain:.06}); tone({freq:990,dur:.18,gain:.06,delay:.10}); tone({freq:1320,dur:.28,gain:.05,delay:.22}); },
+  win(){ [523,659,784,1046].forEach((f,i)=>tone({freq:f,dur:.5,gain:.05,delay:i*.09,type:'triangle'})); },
+};
+
+/* =========================================================================
+   6. 生成
+   ========================================================================= */
+const progress = () => clamp(G.spawned / CONFIG.starTotal, 0, 1);
+const starFallTime = () => lerp(CONFIG.starFallFrom, CONFIG.starFallTo, progress());
+const bombFallTime = () => lerp(CONFIG.bombFallFrom, CONFIG.bombFallTo, progress());
+
+function spawnStar(){
+  const r = 21 * S;
+  const margin = r + 26 * S;
+  const x = rand(margin, W - margin);
+  G.items.push({
+    kind:'star', x, y:-r, r,
+    vy: (groundY + r) / starFallTime(),
+    rot: rand(0, Math.PI*2), vr: rand(-2.4, 2.4), born:0,
+  });
+  // ★ 让伴生炸弹紧跟这颗星
+  if(G.spawned >= CONFIG.bombStartAfterStar){
+    G.nextBombIn = Math.min(G.nextBombIn, rand(CONFIG.bombDelayMin, CONFIG.bombDelayMax));
+    G.bombArmed = true;
+  }
+}
+
+function spawnBomb(){
+  const r = 19 * S;
+  const margin = r + 26 * S;
+  let x = null;
+
+  // ★ 需求1：贴着场上最新的星星生成，形成"夹击"
+  if(G.bombArmed && Math.random() < CONFIG.bombBesideChance){
+    let ref = null;
+    for(let i = G.items.length - 1; i >= 0; i--){
+      if(G.items[i].kind === 'star'){ ref = G.items[i]; break; }
+    }
+    if(ref){
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const off  = rand(CONFIG.bombBesideMin, CONFIG.bombBesideMax) * S;
+      x = ref.x + side * off;
+    }
+  }
+  if(x === null || x < margin || x > W - margin){
+    x = rand(margin, W - margin);
+  }
+  G.bombArmed = false;
+
+  G.items.push({
+    kind:'bomb', x, y:-r, r,
+    vy: (groundY + r) / bombFallTime(),
+    rot: rand(0, Math.PI*2), vr: rand(-1.4, 1.4), born:0,
+  });
+}
+
+/* =========================================================================
+   7. 粒子
+   ========================================================================= */
+function burst(x, y, color, count, power){
+  for(let i=0;i<count;i++){
+    const a = rand(0, Math.PI*2), sp = rand(power*.35, power);
+    G.particles.push({
+      x, y,
+      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - power*.35,
+      life: rand(.4,.85), max:.85,
+      r: rand(1.8,4.6)*S, color,
+    });
+  }
+}
+function ripple(x, y, color){
+  G.ripples.push({ x, y, r:6*S, max:34*S, life:.5, maxLife:.5, color });
+}
+
+/* =========================================================================
+   8. 输入
+   ========================================================================= */
+const input = { dragging: false, offset: 0, keys: {} };
+
+function pointerPos(e){
+  const rect = cvs.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+function moveTo(x){
+  const sp = G.sprite;
+  sp.tx = clamp(x, sp.w*0.5 + 6*S, W - sp.w*0.5 - 6*S);
+}
+
+cvs.addEventListener('pointerdown', e => {
+  if(G.state !== 'playing') return;
+  e.preventDefault();
+  ensureAudio();
+  input.dragging = true;
+  try { cvs.setPointerCapture(e.pointerId); } catch(err){}
+
+  const p = pointerPos(e), sp = G.sprite;
+  const onSprite = Math.abs(p.x - sp.x) < sp.w*0.55 &&
+                   p.y > sp.y - sp.h*1.15 && p.y < sp.y + sp.h*0.35;
+  input.offset = onSprite ? (p.x - sp.tx) : 0;
+  moveTo(p.x - input.offset);
+});
+
+cvs.addEventListener('pointermove', e => {
+  if(!input.dragging) return;
+  e.preventDefault();
+  moveTo(pointerPos(e).x - input.offset);
+});
+
+function endDrag(){ input.dragging = false; }
+cvs.addEventListener('pointerup', endDrag);
+cvs.addEventListener('pointercancel', endDrag);
+
+window.addEventListener('keydown', e => { input.keys[e.key] = true; });
+window.addEventListener('keyup',   e => { input.keys[e.key] = false; });
+
+function updateKeys(dt){
+  const k = input.keys;
+  const left  = k['ArrowLeft']  || k['a'] || k['A'];
+  const right = k['ArrowRight'] || k['d'] || k['D'];
+  if(!left && !right) return;
+  moveTo(G.sprite.tx + (right ? 1 : -1) * CONFIG.keySpeed * S * dt);
+}
+
+/* =========================================================================
+   9. 更新
+   ========================================================================= */
+function setMood(m, dur){
+  G.sprite.mood = m;
+  G.sprite.moodT = dur;
+  if(m === 'happy') R3.anim.bounce = 1;
+  if(m === 'sad')   R3.anim.sink = 1;
+}
+
+function updateSprite(dt){
+  const sp = G.sprite;
+  if(G.stun > 0){
+    G.stun -= dt;
+    sp.mood = 'stun';
+    sp.moodT = 0;
+    if(G.stun <= 0) tipEl.textContent = '眩晕结束，继续接星星';
+  } else {
+    updateKeys(dt);
+    sp.x = lerp(sp.x, sp.tx, 1 - Math.exp(-CONFIG.followStiffness * dt));
+    if(sp.moodT > 0){
+      sp.moodT -= dt;
+      if(sp.moodT <= 0) sp.mood = 'idle';
+    } else {
+      sp.mood = 'idle';
+    }
+  }
+}
+
+function hitSprite(it){
+  const sp = G.sprite;
+  const rx = sp.x - sp.w * 0.5;
+  const ry = sp.y - sp.h * 0.94;
+  const rw = sp.w;
+  const rh = sp.h * 0.98;
+  const nx = clamp(it.x, rx, rx + rw);
+  const ny = clamp(it.y, ry, ry + rh);
+  const dx = it.x - nx, dy = it.y - ny;
+  return (dx*dx + dy*dy) < Math.pow(it.r * CONFIG.catchTolerance, 2);
+}
+
+function updateItems(dt){
+  for(let i = G.items.length - 1; i >= 0; i--){
+    const it = G.items[i];
+    it.born += dt;
+    it.y += it.vy * dt;
+    it.rot += it.vr * dt;
+
+    if(it.y - it.r > groundY + 30*S){ G.items.splice(i,1); continue; }
+
+    if(hitSprite(it)){
+      G.items.splice(i,1);
+      if(it.kind === 'star') onCatch(it); else onBomb(it);
+      continue;
+    }
+
+    if(it.y > groundY - it.r*0.2){
+      if(it.kind === 'star'){
+        onMiss(it);
+        G.items.splice(i,1);
+      }
+    }
+  }
+}
+
+function onCatch(it){
+  G.score++; G.resolved++;
+  G.sprite.squash = 1;
+  setMood('happy', 0.72);
+  burst(it.x, it.y, '#FFC24A', 16, 260*S);
+  burst(it.x, it.y, '#FFF3C4', 8, 180*S);
+  ripple(it.x, groundY, 'rgba(255,194,74,.9)');
+  SFX.catchStar();
+  renderSlots();
+  if(G.score === 1) tipEl.textContent = '接得漂亮，继续';
+  if(G.score === 3) tipEl.textContent = '还差 ' + (CONFIG.starTotal - G.score) + ' 颗';
+}
+
+function onBomb(it){
+  G.hits++;
+  G.stun = CONFIG.stunDuration;
+  G.shake = Math.max(G.shake, 1);
+  setMood('stun', CONFIG.stunDuration);
+  burst(it.x, it.y, '#FF7A45', 22, 340*S);
+  burst(it.x, it.y, '#5A4A3A', 12, 200*S);
+  ripple(it.x, groundY, 'rgba(255,122,69,.9)');
+  SFX.bomb();
+  tipEl.textContent = '被炸晕了，等一下';
+}
+
+function onMiss(it){
+  G.resolved++;
+  setMood('sad', 0.85);
+  ripple(it.x, groundY, 'rgba(255,255,255,.5)');
+  SFX.miss();
+  renderSlots();
+}
+
+function updateParticles(dt){
+  for(let i = G.particles.length - 1; i >= 0; i--){
+    const p = G.particles[i];
+    p.life -= dt;
+    if(p.life <= 0){ G.particles.splice(i,1); continue; }
+    p.vy += 900 * S * dt;
+    p.vx *= (1 - 1.6*dt);
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+  for(let i = G.ripples.length - 1; i >= 0; i--){
+    const r = G.ripples[i];
+    r.life -= dt;
+    if(r.life <= 0){ G.ripples.splice(i,1); continue; }
+    r.r = lerp(r.r, r.max, 1 - Math.exp(-7*dt));
+  }
+}
+
+function updateTimers(dt){
+  G.t += dt;
+
+  if(G.spawned < CONFIG.starTotal){
+    G.nextStarIn -= dt;
+    if(G.nextStarIn <= 0){
+      spawnStar();
+      G.spawned++;
+      const gap = lerp(CONFIG.starGapFrom, CONFIG.starGapTo, progress()) + rand(-1,1)*CONFIG.starGapJitter;
+      G.nextStarIn = Math.max(1.2, gap);
+    }
+  }
+
+  if(G.spawned >= CONFIG.bombStartAfterStar){
+    G.nextBombIn -= dt;
+    if(G.nextBombIn <= 0){
+      spawnBomb();
+      const gap = lerp(CONFIG.bombGapFrom, CONFIG.bombGapTo, progress()) + rand(-1,1)*CONFIG.bombGapJitter;
+      G.nextBombIn = Math.max(1.0, gap);
+    }
+  }
+
+  if(G.resolved >= CONFIG.starTotal){
+    const inAir = G.items.some(it => it.kind === 'star');
+    if(!inAir){
+      if(G.endDelay < 0) G.endDelay = 0.85;
+      G.endDelay -= dt;
+      if(G.endDelay <= 0 && G.state === 'playing') gameOver();
+    }
+  }
+}
+
+/* =========================================================================
+   10. 2D 绘制
+   ========================================================================= */
+function roundRect(c,x,y,w,h,r){
+  r = Math.min(r, w*0.5, h*0.5);
+  c.beginPath();
+  c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r);
+  c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r);
+  c.arcTo(x,y,x+w,y,r);
+  c.closePath();
+}
+function starPath(c,cx,cy,R,inner,rot){
+  c.beginPath();
+  for(let i=0;i<10;i++){
+    const a = rot + i*Math.PI/5 - Math.PI/2;
+    const rr = (i%2===0) ? R : inner;
+    const px = cx + Math.cos(a)*rr, py = cy + Math.sin(a)*rr;
+    i ? c.lineTo(px,py) : c.moveTo(px,py);
+  }
+  c.closePath();
+}
+
+function drawGround(){
+  const g = ctx.createRadialGradient(G.sprite.x, groundY + 10*S, 10*S, G.sprite.x, groundY + 10*S, W*0.62);
+  g.addColorStop(0, 'rgba(255,170,110,.16)');
+  g.addColorStop(.45, 'rgba(255,140,90,.06)');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, groundY - 40*S, W, H - groundY + 40*S);
+}
+
+function drawItem(it){
+  const t = clamp(1 - (groundY - it.y)/(H*0.75), 0.18, 1);
+  ctx.save();
+  ctx.globalAlpha = 0.26 * t;
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(it.x, groundY + 4*S, it.r*(0.55 + t*0.5), it.r*(0.16 + t*0.14), 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  const pop = it.born < 0.22 ? it.born/0.22 : 1;
+
+  if(it.kind === 'star'){
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    ctx.scale(pop,pop);
+    ctx.rotate(it.rot);
+
+    const glow = ctx.createRadialGradient(0,0,it.r*.3, 0,0,it.r*2.1);
+    glow.addColorStop(0,'rgba(255,200,80,.42)');
+    glow.addColorStop(1,'rgba(255,200,80,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0,0,it.r*2.1,0,Math.PI*2); ctx.fill();
+
+    const grd = ctx.createLinearGradient(0,-it.r,0,it.r);
+    grd.addColorStop(0,'#FFE9A8');
+    grd.addColorStop(.5,'#FFC24A');
+    grd.addColorStop(1,'#FF8A2B');
+    starPath(ctx,0,0,it.r,it.r*0.46,0);
+    ctx.fillStyle = grd; ctx.fill();
+    ctx.lineWidth = 1.4*S;
+    ctx.strokeStyle = 'rgba(255,255,255,.65)';
+    ctx.stroke();
+
+    ctx.globalAlpha = .8;
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.beginPath();
+    ctx.ellipse(-it.r*.22,-it.r*.3, it.r*.16, it.r*.1, -.6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    ctx.scale(pop,pop);
+
+    const pulse = 0.5 + 0.5*Math.sin(it.born*9);
+    const glow = ctx.createRadialGradient(0,0,it.r*.4, 0,0,it.r*2);
+    glow.addColorStop(0, 'rgba(255,90,60,' + (0.18 + pulse*0.16) + ')');
+    glow.addColorStop(1, 'rgba(255,90,60,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0,0,it.r*2,0,Math.PI*2); ctx.fill();
+
+    ctx.rotate(it.rot*.25);
+    const grd = ctx.createRadialGradient(-it.r*.3,-it.r*.35,it.r*.1, 0,0,it.r*1.15);
+    grd.addColorStop(0,'#5C5566');
+    grd.addColorStop(.55,'#2A2431');
+    grd.addColorStop(1,'#14101B');
+    ctx.beginPath(); ctx.arc(0,0,it.r,0,Math.PI*2);
+    ctx.fillStyle = grd; ctx.fill();
+    ctx.lineWidth = 1.2*S;
+    ctx.strokeStyle = 'rgba(255,255,255,.14)';
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,.28)';
+    ctx.beginPath();
+    ctx.ellipse(-it.r*.34,-it.r*.36, it.r*.2, it.r*.13, -.7, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(it.r*.34, -it.r*.86);
+    ctx.quadraticCurveTo(it.r*.92, -it.r*1.5, it.r*.5, -it.r*1.9);
+    ctx.lineWidth = 2.2*S;
+    ctx.strokeStyle = '#B08A5A';
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    const spr = it.r*(0.22 + pulse*0.16);
+    const sg = ctx.createRadialGradient(it.r*.5,-it.r*1.95,0, it.r*.5,-it.r*1.95,spr*3.4);
+    sg.addColorStop(0,'rgba(255,240,180,1)');
+    sg.addColorStop(.35,'rgba(255,140,60,.85)');
+    sg.addColorStop(1,'rgba(255,90,40,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.arc(it.r*.5,-it.r*1.95,spr*3.4,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* 精灵的 2D 部分：地面阴影 + 眩晕星环 + 3D 不可用时的方块兜底 */
+function drawSprite2D(){
+  const sp = G.sprite;
+  const w = sp.w, h = sp.h;
+  const top = sp.y - h;
+
+  ctx.save();
+  const shG = ctx.createRadialGradient(sp.x, sp.y + 8*S, 2, sp.x, sp.y + 8*S, w*0.55);
+  shG.addColorStop(0, 'rgba(0,0,0,.45)');
+  shG.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = shG;
+  ctx.beginPath();
+  ctx.ellipse(sp.x, sp.y + 8*S, w*0.55, w*0.15, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  // 3D 未就绪时的兜底方块（保证画面里始终有个可操控的东西）
+  if(!R3.ready){
+    const ch = CHARS[G.char];
+    ctx.save();
+    const grd = ctx.createLinearGradient(0, top, 0, sp.y);
+    grd.addColorStop(0, ch.light);
+    grd.addColorStop(.6, ch.color);
+    grd.addColorStop(1, ch.dark);
+    roundRect(ctx, sp.x - w/2, top, w, h, w*0.3);
+    ctx.fillStyle = grd; ctx.fill();
+    ctx.restore();
+  }
+
+  if(G.stun > 0){
+    for(let i=0;i<3;i++){
+      const a = G.t*6 + i*Math.PI*2/3;
+      const rr = w*0.44;
+      const px = sp.x + Math.cos(a)*rr;
+      const py = top - 6*S + Math.sin(a)*rr*0.28;
+      ctx.save();
+      ctx.globalAlpha = .85;
+      starPath(ctx, px, py, 6*S, 2.6*S, a);
+      ctx.fillStyle = '#FFD166';
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+}
+
+function drawParticles(){
+  G.ripples.forEach(r => {
+    const a = clamp(r.life / r.maxLife, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = a * .75;
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = 2.2*S*a;
+    ctx.beginPath();
+    ctx.ellipse(r.x, r.y, r.r*1.7, r.r*0.42, 0, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  });
+  G.particles.forEach(p => {
+    const a = clamp(p.life / p.max, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r*(0.4 + a*0.8), 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+function render(){
+  ctx.clearRect(0, 0, W, H);
+  ctx.save();
+  if(G.shake > 0){
+    const m = G.shake * 12 * S;
+    ctx.translate((Math.random()-.5)*m, (Math.random()-.5)*m);
+  }
+  drawGround();
+  G.items.forEach(drawItem);
+  drawSprite2D();
+  drawParticles();
+  ctx.restore();
+}
+
+/* =========================================================================
+   11. 扫描识别（黑块 + 暖色背光）
+   ========================================================================= */
+const SCAN = {
+  canvas: null, ctx: null,
+  hits: 0, timer: 0,
+  running: false,
+  sampled: 0,
+  lastInfo: '',
+};
+const SCAN_CW = 140;
+
+function initScan(){
+  SCAN.canvas = document.createElement('canvas');
+  SCAN.canvas.width  = SCAN_CW;
+  SCAN.canvas.height = Math.round(SCAN_CW * 1.8);
+  SCAN.ctx = SCAN.canvas.getContext('2d', { willReadFrequently: true });
+}
+
+/* 抓一帧"屏幕上实际可见的画面" */
+function grabFrame(){
+  const v = camEl;
+  if(!v || v.readyState < 2 || !v.videoWidth || !v.videoHeight) return false;
+
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const scale = Math.max(W / vw, H / vh);       // object-fit: cover
+  const sw = W / scale, sh = H / scale;         // 屏幕可见区对应的视频源尺寸
+  const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+
+  const cw = SCAN_CW;
+  const ch = Math.round(cw * H / W);
+  if(SCAN.canvas.width !== cw || SCAN.canvas.height !== ch){
+    SCAN.canvas.width = cw;
+    SCAN.canvas.height = ch;
+  }
+  SCAN.ctx.drawImage(v, sx, sy, sw, sh, 0, 0, cw, ch);
+  return true;
+}
+
+function analyzeMarker(){
+  const cw = SCAN.canvas.width, ch = SCAN.canvas.height;
+  const img = SCAN.ctx.getImageData(0, 0, cw, ch).data;
+
+  // 只检测取景框区域（屏幕中央 62%）
+  const fx0 = Math.floor(cw * 0.19), fx1 = Math.floor(cw * 0.81);
+  const fy0 = Math.floor(ch * 0.19), fy1 = Math.floor(ch * 0.81);
+  const rw = fx1 - fx0, rh = fy1 - fy0;
+  const total = rw * rh;
+
+  const mask = new Uint8Array(total);
+  let darkCount = 0;
+  for(let y = 0; y < rh; y++){
+    for(let x = 0; x < rw; x++){
+      const si = ((y + fy0) * cw + (x + fx0)) * 4;
+      const lum = 0.299*img[si] + 0.587*img[si+1] + 0.114*img[si+2];
+      if(lum < CONFIG.scanDarkLum){ mask[y*rw + x] = 1; darkCount++; }
+    }
+  }
+
+  const darkPct = darkCount / total * 100;
+  if(darkCount === 0 || darkPct < 0.8 || darkPct > 88){
+    return { ok:false, darkPct, found:0, why:'', areaPct:0 };
+  }
+
+  const visited = new Uint8Array(total);
+  const stack = new Int32Array(total);
+  const cands = [];
+
+  for(let i = 0; i < total; i++){
+    if(!mask[i] || visited[i]) continue;
+
+    let sp = 0;
+    stack[sp++] = i;
+    visited[i] = 1;
+    let count = 0;
+    let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1;
+
+    while(sp > 0){
+      const p = stack[--sp];
+      const px = p % rw, py = (p - px) / rw;
+      count++;
+      if(px < minX) minX = px;
+      if(px > maxX) maxX = px;
+      if(py < minY) minY = py;
+      if(py > maxY) maxY = py;
+
+      if(px > 0){ const q = p - 1; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(px < rw-1){ const q = p + 1; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(py > 0){ const q = p - rw; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(py < rh-1){ const q = p + rw; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+    }
+
+    if(count < 30) continue;
+
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    const ar = bw / bh;
+    const fill = count / (bw * bh);
+    const areaPct = count / total * 100;
+
+    if(ar < 0.55 || ar > 2.0) continue;
+    if(fill < CONFIG.scanMinFill) continue;
+    if(areaPct < CONFIG.scanMinAreaPct || areaPct > CONFIG.scanMaxAreaPct) continue;
+
+    cands.push({
+      areaPct, ar, fill,
+      cy: (minY + maxY) / 2,
+      cx: (minX + maxX) / 2,
+      h: bh,
+    });
+  }
+
+  // 判定：
+  //  A. 画面里出现 ≥2 个尺寸相近、水平排开的黑块 → 就是那排徽标，最强证据
+  //  B. 只有 1 个大而实的黑块 → 视为凑近拍单个徽标
+  //  只靠单个小块不通过，避免被墙面暗斑 / 黑色文字误触发
+  let ok = false, why = '';
+
+  if(cands.length >= 2){
+    for(let i = 0; i < cands.length && !ok; i++){
+      for(let j = i + 1; j < cands.length; j++){
+        const a = cands[i], b = cands[j];
+        const ratio = Math.max(a.areaPct, b.areaPct) / Math.max(0.01, Math.min(a.areaPct, b.areaPct));
+        const dy = Math.abs(a.cy - b.cy);
+        if(ratio < CONFIG.scanPairAreaRatio && dy < Math.min(a.h, b.h) * CONFIG.scanPairAlign){
+          ok = true; why = '成对匹配';
+          break;
+        }
+      }
+    }
+  }
+  if(!ok && cands.length === 1){
+    const c = cands[0];
+    if(c.areaPct > CONFIG.scanSingleMinArea && c.fill > CONFIG.scanSingleMinFill){
+      ok = true; why = '单块近距离';
+    }
+  }
+
+  const biggest = cands.length
+    ? cands.reduce((m, c) => c.areaPct > m.areaPct ? c : m, cands[0])
+    : null;
+
+  return {
+    ok, found: cands.length, darkPct, why,
+    warmPct: 0,
+    areaPct: biggest ? biggest.areaPct : 0,
+  };
+}
+
+function updateScan(dt){
+  if(!SCAN.running) return;
+  SCAN.timer -= dt;
+  if(SCAN.timer > 0) return;
+  SCAN.timer = CONFIG.scanInterval;
+
+  if(!grabFrame()){
+    scanDbg.textContent = '等待摄像头…';
+    return;
+  }
+  const r = analyzeMarker();
+  SCAN.sampled++;
+
+  if(r.ok){
+    SCAN.hits++;
+    if(SCAN.hits >= CONFIG.scanNeed){
+      SCAN.hits = CONFIG.scanNeed;
+      onScanSuccess();
+    }
+  } else {
+    SCAN.hits = Math.max(0, SCAN.hits - 1);
+  }
+
+  const pct = Math.round(SCAN.hits / CONFIG.scanNeed * 100);
+  scanBar.style.width = pct + '%';
+
+  scanDbg.textContent = r.ok
+    ? ('已锁定 ' + r.found + ' 个图形 · ' + r.why)
+    : ('搜索中 · 黑块 ' + (r.found || 0) + ' 个 / 占比 ' + r.darkPct.toFixed(1) + '%');
+}
+
+function onScanSuccess(){
+  if(!SCAN.running) return;
+  SCAN.running = false;
+  SFX.lock();
+  scanBar.style.width = '100%';
+  scanDbg.textContent = '识别成功';
+  toast('识别成功');
+  setTimeout(() => { if(G.state === 'scan') enterGame(); }, 420);
+}
+
+/* =========================================================================
+   12. 摄像头
+   ========================================================================= */
+let camStream = null, camStarting = false;
+
+async function openCam(){
+  if(camStream) return true;
+  if(camStarting) return false;
+  camStarting = true;
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } },
+      audio: false,
+    });
+    camEl.srcObject = camStream;
+    await camEl.play();
+    document.body.classList.add('cam-on');
+    arBtn.classList.add('on');
+    return true;
+  }catch(e){
+    return false;
+  } finally {
+    camStarting = false;
+  }
+}
+function closeCam(){
+  if(camStream){
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+    camEl.srcObject = null;
+    document.body.classList.remove('cam-on');
+    arBtn.classList.remove('on');
+  }
+}
+
+/* =========================================================================
+   13. HUD
+   ========================================================================= */
+const STAR_SVG = '<svg viewBox="0 0 24 24" fill="#3A2A0A"><path d="M12 2.6l2.9 5.9 6.5.95-4.7 4.58 1.11 6.47L12 17.55 6.19 20.5 7.3 14.03 2.6 9.45l6.5-.95z"/></svg>';
+
+function buildSlots(){
+  slotsEl.innerHTML = '';
+  for(let i = 0; i < CONFIG.starTotal; i++){
+    const d = document.createElement('div');
+    d.className = 'slot';
+    d.innerHTML = STAR_SVG;
+    slotsEl.appendChild(d);
+  }
+}
+function renderSlots(){
+  const nodes = slotsEl.children;
+  for(let i = 0; i < nodes.length; i++) nodes[i].classList.toggle('on', i < G.score);
+}
+
+/* =========================================================================
+   14. 流程
+   ========================================================================= */
+function resetGame(){
+  G.score = 0; G.hits = 0; G.spawned = 0; G.resolved = 0;
+  G.t = 0; G.stun = 0; G.shake = 0; G.endDelay = -1;
+  G.nextStarIn = CONFIG.firstStarDelay;
+  G.nextBombIn = CONFIG.bombGapFrom;
+  G.bombArmed = false;
+  G.items.length = 0;
+  G.particles.length = 0;
+  G.ripples.length = 0;
+  G.sprite.x = W/2; G.sprite.tx = W/2;
+  G.sprite.mood = 'idle'; G.sprite.moodT = 0; G.sprite.squash = 0;
+  R3.anim.bounce = 0; R3.anim.sink = 0;
+  buildSlots(); renderSlots();
+  tipEl.textContent = '拖动屏幕移动小精灵';
+}
+
+async function startScan(){
+  G.state = 'scan';
+  introEl.classList.add('hide');
+  resultEl.classList.add('hide');
+  scanEl.classList.remove('hide');
+  scanBar.style.width = '0%';
+  scanDbg.textContent = '正在开启摄像头…';
+  SCAN.hits = 0;
+
+  const okCam = await openCam();
+  if(!okCam){
+    scanDbg.textContent = '摄像头不可用（需要 https 或 localhost 访问）';
+    toast('摄像头打不开，可以直接开始');
+    return;
+  }
+  scanDbg.textContent = '搜索中…';
+  SCAN.running = true;
+}
+
+function enterGame(){
+  SCAN.running = false;
+  scanEl.classList.add('hide');
+  document.body.classList.add('playing');
+  resetGame();
+  G.state = 'playing';
+}
+
+async function prepareAndPlay(){
+  ensureAudio();
+  // 加载当前角色的模型（可能已经在缓存里）
+  if(!R3.ready || R3.currentKey !== G.char){
+    toast('加载形象…');
+    try{ await loadModel(G.char); }
+    catch(e){ console.warn('模型加载失败，使用方块替代', e); }
+  }
+  enterGame();
+}
+
+function gameOver(){
+  G.state = 'over';
+  document.body.classList.remove('playing');
+  SFX.win();
+
+  const tier = photoTier(G.score);
+  let title = '收集完成';
+  if(G.score === CONFIG.starTotal) title = '满星通关';
+  else if(G.score >= 3) title = '差一点点';
+  else if(G.score >= 1) title = '还不错';
+  else title = '一颗都没接到';
+  document.getElementById('resultTitle').textContent = title;
+
+  const rs = document.getElementById('resultStars');
+  rs.innerHTML = '';
+  for(let i = 0; i < CONFIG.starTotal; i++){
+    const s = document.createElement('div');
+    s.className = 'rs' + (i < G.score ? ' on' : '');
+    s.innerHTML = STAR_SVG.replace('#3A2A0A', i < G.score ? '#FFC24A' : '#8A8598');
+    rs.appendChild(s);
+  }
+
+  const figs = document.getElementById('figures');
+  figs.innerHTML = '';
+  tier.chars.forEach(k => {
+    const ch = CHARS[k];
+    const d = document.createElement('div');
+    d.className = 'fig';
+    d.textContent = ch.letter;
+    d.style.background = 'linear-gradient(160deg,' + ch.light + ',' + ch.color + ' 58%,' + ch.dark + ')';
+    figs.appendChild(d);
+  });
+
+  const miss = CONFIG.starTotal - G.score;
+  const parts = [tier.name];
+  if(miss > 0) parts.push('漏掉 ' + miss + ' 颗星星');
+  if(G.hits > 0) parts.push('被炸到 ' + G.hits + ' 次');
+  if(tier.note) parts.push(tier.note);
+  document.getElementById('photoMiss').textContent = parts.join(' · ');
+
+  resultEl.classList.remove('hide');
+}
+
+/* =========================================================================
+   15. 主循环
+   ========================================================================= */
+let lastTs = 0, crashed = false;
+
+function safeRender(){
+  if(crashed) return;
+  try{ render(); }
+  catch(err){
+    crashed = true;
+    console.error('[render]', err);
+    const el = document.createElement('div');
+    el.id = 'crash';
+    el.textContent = '渲染出错：' + (err && err.message ? err.message : err);
+    document.body.appendChild(el);
+  }
+}
+
+function loop(ts){
+  const dt = Math.min((ts - lastTs) / 1000 || 0, 0.05);
+  lastTs = ts;
+
+  if(G.state === 'playing'){
+    updateSprite(dt);
+    updateItems(dt);
+    updateTimers(dt);
+    updateParticles(dt);
+    if(G.shake > 0) G.shake = Math.max(0, G.shake - dt*3.2);
+  } else {
+    G.t += dt;
+    updateParticles(dt);
+    G.sprite.mood = 'idle';
+    if(G.shake > 0) G.shake = Math.max(0, G.shake - dt*3.2);
+  }
+
+  if(G.state === 'scan') updateScan(dt);
+
+  safeRender();
+  syncR3(dt);
+  requestAnimationFrame(loop);
+}
+
+/* =========================================================================
+   16. 绑定
+   ========================================================================= */
+document.querySelectorAll('.pick').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.pick').forEach(o => o.classList.remove('sel'));
+    el.classList.add('sel');
+    G.char = el.dataset.char;
+    loadModel(G.char).catch(()=>{});
+  });
+});
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  ensureAudio();
+  startScan();
+});
+document.getElementById('skipScan').addEventListener('click', () => {
+  prepareAndPlay();
+});
+document.getElementById('againBtn').addEventListener('click', () => {
+  resultEl.classList.add('hide');
+  prepareAndPlay();
+});
+arBtn.addEventListener('click', () => {
+  if(camStream) closeCam(); else openCam();
+});
+document.addEventListener('gesturestart', e => e.preventDefault());
+cvs.addEventListener('contextmenu', e => e.preventDefault());
+
+let toastTimer = 0;
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+}
+
+/* =========================================================================
+   17. 启动
+   ========================================================================= */
+initR3();
+initScan();
+resize();
+buildSlots();
+G.sprite.x = W/2;
+G.sprite.tx = W/2;
+loadModel(G.char).catch(()=>{});   // 预加载默认形象
+requestAnimationFrame(loop);
+
+window.__GAME = { G, CONFIG, CHARS, R3, SCAN, enterGame, prepareAndPlay, analyzeMarker, startScan };
+})();
+</script>
+</body>
+</html>
