@@ -41,14 +41,17 @@
     object-fit:cover;object-position:center;
     display:none;z-index:1;
   }
-  /* 上下白雾只给扫描页用；游戏界面要求背景全透，playing 时直接关掉 */
+  /* 上下白雾只给扫描页用；游戏界面要求背景全透，playing 时直接关掉。
+     z-index 要压在画布（实景现在画在 #game 上）之上，否则扫描页的文字没有承托 */
   #camMask{
-    position:absolute;inset:0;display:none;pointer-events:none;z-index:2;
+    position:absolute;inset:0;display:none;pointer-events:none;z-index:6;
     background:linear-gradient(180deg, rgba(255,255,255,.40) 0%, rgba(255,255,255,0) 22%,
                                         rgba(255,255,255,0) 72%, rgba(255,255,255,.20) 100%);
   }
   body.cam-on #cam,body.cam-on #camMask{display:block}
   body.cam-on.playing #camMask{display:none}
+  /* 拍照页要求整页全透明，白雾也一并关掉 */
+  body.cam-on.capturing #camMask{display:none}
   body.cam-on #fallback{display:none}
 
   /* 3D 形象层（必须在 2D 画布之上：地面阴影/暖光画在 2D 上，压在模型身上会变成一道横线） */
@@ -279,28 +282,40 @@
     box-shadow:0 9px 20px rgba(20,16,14,.18);
   }
 
-  /* 取景画框：去掉原先那圈米白边框与内层虚线照片位 */
+  /* 取景画框：整页透出背后的实景，框本身不带任何底色 */
   #capStage{
     position:relative;
     width:var(--capW);
     height:calc(var(--capW) * 4 / 3);
-    border-radius:20px;overflow:hidden;background:#E7DFD4;
+    border-radius:20px;overflow:hidden;background:transparent;
     flex:0 0 auto;border:none;outline:none;
   }
+  /* 模板图在照片位挖一个洞：洞内透明，直接透出下面的摄像头实景 */
   #capTemplate{
     position:absolute;inset:0;width:100%;height:100%;
     object-fit:cover;display:none;
+    --sx:10%; --sy:14%; --sw:80%; --sh:66%;
+    -webkit-mask-image:
+      linear-gradient(#000,#000), linear-gradient(#000,#000),
+      linear-gradient(#000,#000), linear-gradient(#000,#000);
+    -webkit-mask-repeat:no-repeat;
+    -webkit-mask-position:0 0, 0 100%, 0 var(--sy), 100% var(--sy);
+    -webkit-mask-size:
+      100% var(--sy),
+      100% calc(100% - var(--sy) - var(--sh)),
+      var(--sx) var(--sh),
+      calc(100% - var(--sx) - var(--sw)) var(--sh);
+    mask-image:
+      linear-gradient(#000,#000), linear-gradient(#000,#000),
+      linear-gradient(#000,#000), linear-gradient(#000,#000);
+    mask-repeat:no-repeat;
+    mask-position:0 0, 0 100%, 0 var(--sy), 100% var(--sy);
+    mask-size:
+      100% var(--sy),
+      100% calc(100% - var(--sy) - var(--sh)),
+      var(--sx) var(--sh),
+      calc(100% - var(--sx) - var(--sw)) var(--sh);
   }
-  #capSlot{
-    position:absolute;overflow:hidden;background:transparent;
-    border:none;
-  }
-  #capVideo{
-    /* 多铺 1px：照片位的百分比宽高会有亚像素，差一点点就会漏出模板底色（看起来像一条细边） */
-    width:calc(100% + 2px);height:calc(100% + 2px);
-    margin:-1px;object-fit:cover;display:block;
-  }
-  #capVideo.mirror{transform:scaleX(-1)}
   #capFlip{
     position:absolute;right:10px;top:10px;z-index:3;
     width:38px;height:38px;border-radius:50%;border:none;
@@ -449,13 +464,12 @@
     <div id="resultHint">星星收集数量越多，合照伙伴越多哟</div>
   </div>
 
-  <!-- 拍照 -->
-  <div class="sheet light hide" id="capture">
+  <!-- 拍照（整页透明：背景就是背后的摄像头实景） -->
+  <div class="sheet clear hide" id="capture">
     <div id="tplStrip"></div>
 
     <div id="capStage">
       <img id="capTemplate" alt="">
-      <div id="capSlot"><video id="capVideo" playsinline muted autoplay></video></div>
       <button id="capFlip" type="button" aria-label="反转镜头">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
              stroke-linecap="round" stroke-linejoin="round">
@@ -696,7 +710,8 @@ const G = {
   char: 'v',
   t: 0,
   score: 0,
-  best: 0,                  // 本次打开页面以来的最高星数（用来解锁合照模板）
+  best: 0,                  // 本次打开页面以来的最高星数
+  owned: [],                // 本次打开页面以来拿过的模板（星数），刷新页面即清空
   hits: 0,
   spawned: 0,
   resolved: 0,
@@ -917,13 +932,23 @@ function makeFaceMesh(key){
   return mesh;
 }
 
-/* 接到星星时把表情点亮 */
+/* 接星时把表情点亮；同时把原来的眼睛藏起来 —— 墨镜 / 爱心眼是一整套新眼睛，
+   叠在旧眼白上会很怪。dd（腼腆）不换眼睛，只在脸颊加晕，所以不藏。 */
+const personaKeepsEyes = k => (CHARS[k] || CHARS.v).persona === 'shy';
+
+function setEyesVisible(key, on){
+  const c = modelCache[key];
+  if(!c || !c.eyeMats) return;
+  c.eyeMats.forEach(m => { m.visible = on; });
+}
+
 function showFace(){
-  const c = modelCache[G.char];
-  if(c && c.face){
-    c.face.material.opacity = 1;
-    c.face.visible = true;
-  }
+  const key = G.char;
+  const c = modelCache[key];
+  if(!c || !c.face) return;
+  c.face.material.opacity = 1;
+  c.face.visible = true;
+  if(!personaKeepsEyes(key)) setEyesVisible(key, false);
 }
 
 function loadThreeScript(){
@@ -996,6 +1021,10 @@ function loadModel(key){
       obj.scale.setScalar(s);
       obj.position.set(-center.x * s, -box.min.y * s, -center.z * s);
 
+      /* 眼睛（眼白 + 高光）在 FBX 里是独立的材质组，记下来，
+         表情出现时把它们隐藏掉，就不会出现"新表情叠在旧眼睛上"的怪样子 */
+      const eyeMats = [];
+
       obj.traverse(o => {
         if(o.isMesh){
           o.frustumCulled = false;
@@ -1017,6 +1046,7 @@ function loadModel(key){
               metalness: 0.06,
             });
             if(src && src.map){ mtl.map = src.map; mtl.needsUpdate = true; }
+            if(lum >= 0.12) eyeMats.push(mtl);      // 浅色组 = 眼白 / 高光
             return mtl;
           };
           o.material = Array.isArray(o.material) ? srcArr.map(conv) : conv(srcArr[0]);
@@ -1030,7 +1060,7 @@ function loadModel(key){
       const face = makeFaceMesh(key);
       if(face) holder.add(face);
 
-      modelCache[key] = { holder, face, aspect: size.x / Math.max(size.y, 1e-6) };
+      modelCache[key] = { holder, face, eyeMats, aspect: size.x / Math.max(size.y, 1e-6) };
       applyModel(key);
       resolve(true);
     }, undefined, () => resolve(false));
@@ -1040,6 +1070,14 @@ function loadModel(key){
 function applyModel(key){
   const c = modelCache[key];
   if(!c || !R3.group) return;
+
+  /* 换角色时把上一个模型的表情状态清干净，否则切回来会少一副眼睛 */
+  Object.keys(modelCache).forEach(k => {
+    const m = modelCache[k];
+    setEyesVisible(k, true);
+    if(m.face){ m.face.material.opacity = 0; m.face.visible = false; }
+  });
+
   while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
   R3.group.add(c.holder);
   R3.currentKey = key;
@@ -1057,7 +1095,7 @@ function applyModel(key){
 function syncR3(dt){
   if(!R3.ok || !R3.ready) return;
 
-  /* 表情淡出：每次接到星星点亮，之后自己退掉 */
+  /* 表情淡出：每次接到星星点亮，之后自己退掉；退干净时把原眼睛放回去 */
   Object.keys(modelCache).forEach(k => {
     const f = modelCache[k].face;
     if(!f || !f.visible) return;
@@ -1065,6 +1103,7 @@ function syncR3(dt){
     if(f.material.opacity <= 0.001){
       f.material.opacity = 0;
       f.visible = false;
+      if(!personaKeepsEyes(k)) setEyesVisible(k, true);
     }
   });
 
@@ -1739,7 +1778,15 @@ function drawParticles(){
 
 function render(){
   ctx.clearRect(0, 0, W, H);
-  // 识别 / 选择 / 拍照阶段画布留空，取景框里只显示摄像头画面
+
+  /* 实景统一画在画布最底层。不再依赖 <video> 的 object-fit —— 微信 / 部分安卓内核
+     对 video 的 object-fit 支持不一致，会把画面缩成中间一块、四周露出底色。
+     自己画就永远是整屏铺满，任何设备结果一致。
+     只有真正看得见实景的三个状态才画，白底页面不浪费这一笔。 */
+  const needBg = (G.state === 'scan' || G.state === 'playing' || G.state === 'capture');
+  if(needBg) drawCamBg();
+
+  // 识别 / 选择 / 拍照阶段只留实景，不画游戏元素
   if(G.state === 'scan' || G.state === 'intro' || G.state === 'capture') return;
   ctx.save();
   if(G.shake > 0){
@@ -2009,13 +2056,35 @@ function onScanSuccess(){
    11. 摄像头
    ========================================================================= */
 let camStream = null, camStarting = false;
-let selfieStream = null;
-let capFacing = 'user';       // 拍照界面当前用的镜头
+let camFacing = 'environment';   // 全局只有一路摄像头，拍照页翻镜头就是换这一路
 
-/* 让摄像头背景铺满全屏。
-   手机上来回切前后摄之后，<video> 的合成层常常沿用上一次的尺寸，
-   表现就是"只有中间一块有画面、四周是底色"。这里重绑一遍流 + 强制一次布局，
-   并等元数据真的就绪（否则 object-fit:cover 拿不到尺寸算不出来）。 */
+/* 把摄像头画面按 cover 铺满整块画布。
+   不再依赖 <video> 的 object-fit：微信 / 部分安卓内核对 video 的 object-fit
+   支持不一致，会把画面缩成中间一块、四周露出底色（"只有中间一块有背景图"）。
+   自己画到 canvas 上，任何内核结果都一样。 */
+function drawCamBg(){
+  const v = camEl;
+  if(!v || !v.videoWidth || !v.videoHeight || v.readyState < 2) return false;
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const sc = Math.max(W / vw, H / vh);
+  const dw = vw * sc, dh = vh * sc;
+  const dx = (W - dw) / 2, dy = (H - dh) / 2;
+
+  if(camFacing === 'user'){
+    // 自拍视角：左右镜像，像照镜子一样自然
+    ctx.save();
+    ctx.translate(W, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(v, W - dx - dw, dy, dw, dh);
+    ctx.restore();
+  } else {
+    ctx.drawImage(v, dx, dy, dw, dh);
+  }
+  return true;
+}
+
+/* 让摄像头背景铺满全屏。切前后摄 / 切后台之后 <video> 可能被挂起，
+   这里重绑一遍流、强制一次布局，并等元数据真的就绪。 */
 async function ensureCamBg(){
   if(!camStream) return false;
   if(camEl.srcObject !== camStream) camEl.srcObject = camStream;
@@ -2041,15 +2110,26 @@ async function ensureCamBg(){
   return true;
 }
 
-async function openCam(){
+/* facing：'environment' 后摄 / 'user' 前摄 */
+async function openCam(facing){
   if(camStarting) return !!camStream;
+
+  // 要求换镜头：先把旧流放掉，否则会一直沿用上一次的镜头
+  if(facing && facing !== camFacing && camStream){
+    closeCam();
+    await new Promise(r => setTimeout(r, 140));
+  }
+  if(facing) camFacing = facing;
 
   if(camStream) return await ensureCamBg();
 
   camStarting = true;
   try{
     const s = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal:'environment' }, width:{ ideal:1280 }, height:{ ideal:720 } },
+      video: {
+        facingMode: { ideal: camFacing },
+        width:{ ideal: 1280 }, height:{ ideal: 720 },
+      },
       audio: false,
     });
     camStream = s;
@@ -2080,59 +2160,15 @@ function closeCam(){
   }
 }
 
-const capVideo = document.getElementById('capVideo');
-
-/* 拍照用的镜头：可以在前置 / 后置之间切换。
-   两个镜头都按 3:4 竖屏请求，切来切去取景框的比例才不会跳。 */
-async function openSelfie(facing){
-  if(facing) capFacing = facing;
-  if(selfieStream) return true;
-  try{
-    selfieStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: capFacing },
-        width:  { ideal: 1440 },
-        height: { ideal: 1920 },
-        aspectRatio: { ideal: 3 / 4 },
-      },
-      audio: false,
-    });
-    capVideo.srcObject = selfieStream;
-    capVideo.classList.toggle('mirror', capFacing === 'user');
-    try{ await capVideo.play(); }catch(e){}
-
-    /* 有些机型会忽略上面的约束、给一个 16:9 的流；再单独对轨道要一次 3:4
-       （拿不到也没关系，CSS 的 cover 会按同一个框裁切，框本身的比例不会变） */
-    try{
-      const track = selfieStream.getVideoTracks()[0];
-      if(track && track.applyConstraints){
-        await track.applyConstraints({ aspectRatio: { ideal: 3 / 4 } });
-      }
-    }catch(e){}
-
-    return true;
-  }catch(e){
-    selfieStream = null;
-    capVideo.srcObject = null;
-    return false;
-  }
-}
-function closeSelfie(){
-  if(selfieStream){
-    selfieStream.getTracks().forEach(t => t.stop());
-    selfieStream = null;
-    capVideo.srcObject = null;
-  }
-}
-
-/* 切换前后镜头 */
+/* 切换前后镜头：整条链只有一路流，换镜头就是关掉重开 */
 async function flipCamera(){
-  const next = capFacing === 'user' ? 'environment' : 'user';
-  closeSelfie();
-  const ok = await openSelfie(next);
+  const next = camFacing === 'user' ? 'environment' : 'user';
+  closeCam();
+  await new Promise(r => setTimeout(r, 140));
+  const ok = await openCam(next);
   if(!ok){
-    capFacing = next === 'user' ? 'environment' : 'user';
-    await openSelfie(capFacing);
+    camFacing = next === 'user' ? 'environment' : 'user';
+    await openCam(camFacing);
     toast('这台设备只有一个镜头');
   }
 }
@@ -2172,6 +2208,12 @@ function resetGame(){
   G.sprite.mood = 'idle'; G.sprite.moodT = 0;
   ANIM.bounce = 0; ANIM.sink = 0;
   R3.anim.bounce = 0; R3.anim.sink = 0; R3.anim.hit = 0; R3.anim.hurt = 0; R3.anim.lean = 0;
+  // 新一局从干净的脸开始：表情收起、原眼睛回来
+  Object.keys(modelCache).forEach(k => {
+    const m = modelCache[k];
+    setEyesVisible(k, true);
+    if(m.face){ m.face.material.opacity = 0; m.face.visible = false; }
+  });
   buildSlots(); renderSlots();
   tipEl.textContent = '拖动屏幕移动小精灵';
 }
@@ -2189,7 +2231,9 @@ async function bootScan(){
   SCAN.hits = 0;
   scanFrameEl.classList.remove('warm');
 
-  const ok = await openCam();
+  /* 识别要用后摄的原始画面：前摄画面是镜像的，镜像后左右会反，
+     识别框和显示框就对不上了 */
+  const ok = await openCam('environment');
   if(!ok){
     scanDbg.textContent = '摄像头打不开（需要 https 或 localhost）';
     camFailBtn.hidden = false;
@@ -2240,13 +2284,11 @@ async function enterGame(){
 
 async function prepareAndPlay(){
   ensureAudio();
-  closeSelfie();
-  await new Promise(r => setTimeout(r, 120));   // 手机上同时只允许一路摄像头，先让前置释放
 
-  // 拍照切镜头后摄像头可能没恢复，失败再补一次
+  // 拍照切过镜头的话这里补一次
   if(!camStream){
-    let ok = await openCam();
-    if(!ok){ await new Promise(r => setTimeout(r, 320)); ok = await openCam(); }
+    let ok = await openCam(camFacing);
+    if(!ok){ await new Promise(r => setTimeout(r, 320)); ok = await openCam(camFacing); }
   } else {
     await ensureCamBg();
   }
@@ -2259,6 +2301,9 @@ function gameOver(){
 
   const zero = G.score <= 0;
   if(G.score > G.best) G.best = G.score;
+  /* 拿到几颗星就记下第几张模板；拿过的都留着，之后拍照可以来回换。
+     只存在内存里 —— 刷新页面重进就没了，正是要的效果 */
+  if(G.score >= 1 && G.owned.indexOf(G.score) < 0) G.owned.push(G.score);
 
   if(zero) SFX.miss(); else SFX.win();
 
@@ -2315,7 +2360,6 @@ function gameOver(){
    14. 拍照
    ========================================================================= */
 const capStage = document.getElementById('capStage');
-const capSlot  = document.getElementById('capSlot');
 const capTpl   = document.getElementById('capTemplate');
 const tplStrip = document.getElementById('tplStrip');
 const shotImg  = document.getElementById('shotImg');
@@ -2343,12 +2387,13 @@ function currentSlot(){
   return { x: 0, y: 0, w: 1, h: 1 };
 }
 
+/* 把照片位写进模板图的遮罩：洞内透明，直接透出背后的摄像头实景 */
 function layoutCapSlot(){
   const s = currentSlot();
-  capSlot.style.left   = (s.x * 100) + '%';
-  capSlot.style.top    = (s.y * 100) + '%';
-  capSlot.style.width  = (s.w * 100) + '%';
-  capSlot.style.height = (s.h * 100) + '%';
+  capTpl.style.setProperty('--sx', (s.x * 100) + '%');
+  capTpl.style.setProperty('--sy', (s.y * 100) + '%');
+  capTpl.style.setProperty('--sw', (s.w * 100) + '%');
+  capTpl.style.setProperty('--sh', (s.h * 100) + '%');
 }
 
 /* 选中某张模板 */
@@ -2368,38 +2413,46 @@ function selectTemplate(t){
   });
 }
 
-/* 上方一行：一局只拿一张 —— 拿到几颗星，就只出第几张，不做累积解锁 */
+/* 上方一行：本次游戏里拿过的模板都留着，随时可以点回来换一张拍。
+   只存在内存里，刷新页面就清空（用户要的就是这个行为） */
 function buildTemplateStrip(){
-  const t = TEMPLATES.find(x => x.stars === G.score) || null;
+  const owned = (G.owned || []).slice().sort((a, b) => a - b);
   tplStrip.innerHTML = '';
-  if(!t){ selectTemplate(null); return; }
 
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className = 'tplChip';
-  b.dataset.stars = String(t.stars);
+  owned.forEach(stars => {
+    const t = TEMPLATES.find(x => x.stars === stars);
+    if(!t) return;
 
-  const ph = document.createElement('span');
-  ph.className = 'ph';
-  ph.textContent = t.stars + ' 星';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tplChip';
+    b.dataset.stars = String(t.stars);
 
-  const img = document.createElement('img');
-  img.alt = '';
-  img.style.display = 'none';                 // 加载成功再显示，缺图就停在占位卡
-  img.addEventListener('load', () => { img.style.display = 'block'; });
-  img.addEventListener('error', () => { img.style.display = 'none'; ph.style.display = 'grid'; });
-  img.src = t.src + (window.ASSET_Q || '');
+    const ph = document.createElement('span');
+    ph.className = 'ph';
+    ph.textContent = t.stars + ' 星';
 
-  const bd = document.createElement('span');
-  bd.className = 'badge';
-  bd.textContent = '★'.repeat(t.stars);
+    const img = document.createElement('img');
+    img.alt = '';
+    img.style.display = 'none';                 // 加载成功再显示，缺图就停在占位卡
+    img.addEventListener('load', () => { img.style.display = 'block'; });
+    img.addEventListener('error', () => { img.style.display = 'none'; ph.style.display = 'grid'; });
+    img.src = t.src + (window.ASSET_Q || '');
 
-  b.appendChild(ph);
-  b.appendChild(img);
-  b.appendChild(bd);
-  tplStrip.appendChild(b);
+    const bd = document.createElement('span');
+    bd.className = 'badge';
+    bd.textContent = '★'.repeat(t.stars);
 
-  selectTemplate(t);
+    b.appendChild(ph);
+    b.appendChild(img);
+    b.appendChild(bd);
+    b.addEventListener('click', () => { ensureAudio(); selectTemplate(t); });
+    tplStrip.appendChild(b);
+  });
+
+  // 默认选中本局拿到的那张（拿过的都在）
+  const pick = TEMPLATES.find(x => x.stars === G.score) || TEMPLATES.find(x => x.stars === owned[owned.length - 1]) || null;
+  selectTemplate(pick);
 }
 
 async function openCapture(){
@@ -2408,29 +2461,25 @@ async function openCapture(){
   resultEl.classList.add('hide');
   shotEl.classList.add('hide');
   capEl.classList.remove('hide');
+  document.body.classList.add('capturing');
 
   buildTemplateStrip();
 
-  closeCam();                 // 手机通常同时只允许一路摄像头
-  capFacing = 'user';
-  const ok = await openSelfie('user');
-  if(!ok){
-    const ok2 = await openSelfie('environment');
-    if(!ok2) toast('摄像头打不开，仍可拍摄');
-  }
+  /* 不再另开一路摄像头：整页背景就是游戏里那一路实景，
+     所以不会出现"白底框"，也不用担心手机上同时只能开一路的限制 */
+  if(!camStream) await openCam(camFacing);
+  else await ensureCamBg();
 }
 
 async function closeCapture(){
-  closeSelfie();
-  await new Promise(r => setTimeout(r, 120));   // 先让拍照镜头释放
   capEl.classList.add('hide');
   shotEl.classList.add('hide');
+  document.body.classList.remove('capturing');
   resultEl.classList.remove('hide');
   G.state = 'over';
-  // 拍照时为了给拍照镜头让路把后摄关了，回来要恢复实景背景，失败再补一次
   if(!camStream){
-    let ok = await openCam();
-    if(!ok){ await new Promise(r => setTimeout(r, 280)); ok = await openCam(); }
+    let ok = await openCam('environment');
+    if(!ok){ await new Promise(r => setTimeout(r, 280)); ok = await openCam('environment'); }
   } else {
     await ensureCamBg();
   }
@@ -2446,7 +2495,7 @@ function shoot(){
   cc.width = outW; cc.height = outH;
   const g = cc.getContext('2d');
 
-  /* 底色调成暖米色而不是纯白：即使模板缺图也不会出现白框 */
+  /* 底色只在模板缺图时露出来，用暖米色而不是纯白，绝不会出现白框 */
   g.fillStyle = '#E7DFD4';
   g.fillRect(0, 0, outW, outH);
 
@@ -2460,32 +2509,57 @@ function shoot(){
   }
 
   const slot = currentSlot();
-  const sx = outW * slot.x;
-  const sy = outH * slot.y;
-  const sw = outW * slot.w;
-  const sh = outH * slot.h;
+  const ox = outW * slot.x;
+  const oy = outH * slot.y;
+  const ow = outW * slot.w;
+  const oh = outH * slot.h;
 
   g.save();
   g.beginPath();
-  g.rect(sx, sy, sw, sh);
+  g.rect(ox, oy, ow, oh);
   g.clip();
 
-  const v = capVideo;
-  if(v && v.readyState >= 2 && v.videoWidth){
-    // cover 裁切；前置镜头才镜像，与预览保持一致
+  /* 照片位里放的画面：按"洞口"在屏幕上的实际位置去实景里截那一块，
+     所以拍出来的照片和预览时透过洞口看到的画面是同一块内容 */
+  const v = camEl;
+  const stageRect = capStage.getBoundingClientRect();
+  if(v && v.readyState >= 2 && v.videoWidth && stageRect.width > 0){
     const vw = v.videoWidth, vh = v.videoHeight;
-    const scale = Math.max(sw / vw, sh / vh);
-    const dw = vw * scale, dh = vh * scale;
-    if(capFacing === 'user'){
-      g.translate(sx + sw, sy);
-      g.scale(-1, 1);
-      g.drawImage(v, (sw - dw) / 2, (sh - dh) / 2, dw, dh);
+    const sc = Math.max(W / vw, H / vh);          // 与 drawCamBg 同一套映射
+    const dw = vw * sc, dh = vh * sc;
+    const offsetX = (W - dw) / 2, offsetY = (H - dh) / 2;
+
+    // 洞口在屏幕上的矩形
+    const holeL = stageRect.left + stageRect.width  * slot.x;
+    const holeT = stageRect.top  + stageRect.height * slot.y;
+    const holeW = stageRect.width  * slot.w;
+    const holeH = stageRect.height * slot.h;
+
+    // 换算成视频源坐标
+    let srcX = (holeL - offsetX) / sc;
+    let srcY = (holeT - offsetY) / sc;
+    const srcW = holeW / sc;
+    const srcH = holeH / sc;
+
+    if(camFacing === 'user'){
+      // 画布上已经镜像过，这里同样按镜像取
+      srcX = vw - (srcX + srcW);
+    }
+
+    const kx = clamp(srcX, 0, Math.max(vw - 1, 0));
+    const ky = clamp(srcY, 0, Math.max(vh - 1, 0));
+    const kw = Math.min(srcW, vw - kx);
+    const kh = Math.min(srcH, vh - ky);
+
+    if(kw > 1 && kh > 1){
+      g.drawImage(v, kx, ky, kw, kh, ox, oy, ow, oh);
     } else {
-      g.drawImage(v, sx + (sw - dw) / 2, sy + (sh - dh) / 2, dw, dh);
+      g.fillStyle = '#D9CFC0';
+      g.fillRect(ox, oy, ow, oh);
     }
   } else {
     g.fillStyle = '#D9CFC0';
-    g.fillRect(sx, sy, sw, sh);
+    g.fillRect(ox, oy, ow, oh);
   }
   g.restore();
 
@@ -2576,7 +2650,7 @@ capFlipBtn.addEventListener('click', () => { ensureAudio(); flipCamera(); });
 camFailBtn.addEventListener('click', () => { enterGame(); });
 
 arBtn.addEventListener('click', () => {
-  if(camStream) closeCam(); else openCam();
+  if(camStream) closeCam(); else openCam(camFacing);
 });
 
 document.addEventListener('gesturestart', e => e.preventDefault());
@@ -2618,7 +2692,9 @@ window.__GAME = { G, CONFIG, CHARS, TEMPLATES, SCAN, ANIM, R3, modelCache,
                   enterGame, prepareAndPlay, showIntro, analyzeMarker, bootScan,
                   openCapture, shoot, closeCapture, flipCamera, gameOver,
                   selectTemplate, templateFor, scanSuccess: onScanSuccess,
-                  get tplSel(){ return tplSel; } };
+                  onCatch, setEyesVisible, drawCamBg,
+                  get tplSel(){ return tplSel; },
+                  get camFacing(){ return camFacing; } };
 })();
 </script>
 </body>
