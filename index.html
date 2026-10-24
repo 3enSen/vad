@@ -163,19 +163,20 @@
   #scanFrame{
     position:relative;
     width:min(62vmin,262px);height:min(62vmin,262px);
-    border-radius:30px;
-    border:1.5px solid rgba(255,255,255,.62);
-    box-shadow:0 12px 38px rgba(20,16,14,.20), inset 0 0 34px rgba(20,16,14,.10);
+    border-radius:28px;
+    border:0;
     flex:0 0 auto;
   }
+  /* 取景框：四角粗黑折线（二维码扫描框的样子）。
+     黑线在暗场景里会糊掉，所以补一圈很淡的白色晕边把它托出来 */
   #scanFrame i.c{
-    position:absolute;width:32px;height:32px;
-    border:3px solid #fff;border-radius:7px;
-    filter:drop-shadow(0 1px 3px rgba(20,16,14,.42));
+    position:absolute;width:46px;height:46px;
+    border:5.5px solid #14100E;border-radius:10px;
+    filter:drop-shadow(0 0 2.5px rgba(255,255,255,.78)) drop-shadow(0 2px 7px rgba(20,16,14,.34));
     transition:border-color .16s ease, transform .16s ease;
   }
-  /* 识别有进展时角标变暖色（替代原来的进度横线） */
-  #scanFrame.warm i.c{border-color:#FFC24A;transform:scale(1.08)}
+  /* 识别有进展时角标转深橙（仍是深色线，不会跳成白框） */
+  #scanFrame.warm i.c{border-color:#D2541A;transform:scale(1.05)}
   #scanFrame i.tl{top:-2px;left:-2px;border-right:0;border-bottom:0;border-radius:14px 0 0 0}
   #scanFrame i.tr{top:-2px;right:-2px;border-left:0;border-bottom:0;border-radius:0 14px 0 0}
   #scanFrame i.bl{bottom:-2px;left:-2px;border-right:0;border-top:0;border-radius:0 0 0 14px}
@@ -334,14 +335,30 @@
   #capBack{padding:15px 34px}
   #shootBtn{padding:15px 52px}
 
-  /* 拍照结果 */
-  #shotTitle{font-size:19px;font-weight:800;margin-bottom:14px}
-  #shotImg{
-    max-width:min(340px,86vw);max-height:52vh;
-    border-radius:16px;box-shadow:0 16px 38px rgba(20,16,14,.16);
-    display:block;
+  /* 拍照结果：整页透明（背后还是实景），中间只放一张带白边的照片 */
+  #shotSheet{justify-content:center;gap:14px}
+  #shotTitle{
+    font-size:12.5px;font-weight:700;letter-spacing:.12em;color:#fff;
+    padding:6px 16px;border-radius:99px;background:rgba(20,16,14,.55);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
   }
-  #saveHint{margin-top:12px;font-size:11.5px;color:var(--ink3);letter-spacing:.03em}
+  #shotFrame{
+    padding:11px;background:#fff;border-radius:6px;
+    box-shadow:0 20px 48px rgba(20,16,14,.34);
+    max-width:90vw;flex:0 0 auto;
+  }
+  #shotImg{
+    display:block;max-width:calc(90vw - 22px);max-height:60vh;
+    border-radius:2px;
+    -webkit-touch-callout:default;
+    -webkit-user-select:auto;user-select:auto;
+  }
+  #shotSheet .capActions{margin-top:2px}
+  #saveHint{
+    font-size:12px;color:#fff;letter-spacing:.04em;
+    padding:6px 15px;border-radius:99px;background:rgba(20,16,14,.48);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  }
 
   /* ---------- 杂项 ---------- */
   #arToggle{
@@ -390,7 +407,7 @@
     .capActions{margin-top:13px}
     #shootBtn{padding:13px 44px}
     #capBack{padding:13px 28px}
-    #shotImg{max-height:44vh}
+    #shotImg{max-height:48vh}
   }
 </style>
 </head>
@@ -487,13 +504,15 @@
     </div>
   </div>
 
-  <!-- 拍照结果 -->
-  <div class="sheet light hide" id="shotSheet">
+  <!-- 拍照结果：透明底 + 一张带白边的照片（网页存不进相册，改成提示长按保存） -->
+  <div class="sheet clear hide" id="shotSheet">
     <div id="shotTitle">拍好啦</div>
-    <img id="shotImg" alt="合照">
-    <a class="btn" id="saveBtn" download="合照.jpg">保存到相册</a>
-    <div id="saveHint">没有弹出保存？长按上面的图片即可保存</div>
-    <button class="btn ghost" id="shotDone" type="button">完成</button>
+    <div id="shotFrame"><img id="shotImg" alt="合照"></div>
+    <div id="saveHint">长按图片保存到相册</div>
+    <div class="capActions">
+      <button class="btn ghost" id="retakeBtn" type="button">重新拍摄</button>
+      <button class="btn" id="shotDone" type="button">完成</button>
+    </div>
   </div>
 </div>
 
@@ -577,9 +596,9 @@ const CHAR_IMG = {};
    warm 热情——呼吸快而大、随移动大幅侧倾
    shy  腼腆——小幅快抖、含胸低头 */
 const PERSONA = {
-  cool: { breath: 1.15, amp: 0.55, lean: 0.70, rotY: 0.07, tilt: -0.055 },
-  warm: { breath: 2.35, amp: 1.35, lean: 1.50, rotY: 0.16, tilt:  0.000 },
-  shy:  { breath: 1.75, amp: 1.00, lean: 1.00, rotY: 0.10, tilt:  0.070 },
+  cool: { breath: 1.15, amp: 0.55, lean: 0.70, rotY: 0.07, tilt: -0.055, stun: 0.55 },
+  warm: { breath: 2.35, amp: 1.35, lean: 1.50, rotY: 0.16, tilt:  0.000, stun: 1.30 },
+  shy:  { breath: 1.75, amp: 1.00, lean: 1.00, rotY: 0.10, tilt:  0.070, stun: 0.85 },
 };
 const personaOf = k => PERSONA[(CHARS[k] || CHARS.v).persona] || PERSONA.warm;
 
@@ -767,8 +786,11 @@ function heartPath(g, cx, cy, size){
   g.closePath();
 }
 
-/* 把性格画成一张贴图：cool=墨镜 / warm=爱心眼 / shy=腮红 + 汗滴 */
-function faceCanvas(persona, key){
+/* 把性格画成一张贴图，两种时机各一套：
+     kind='catch' 接到星星：cool=墨镜 / warm=爱心眼 / shy=腮红
+     kind='hurt'  被炸到：  cool=歪掉的破墨镜 / warm=圈圈眼+炸开 / shy=>_< + 强腮红
+   两套都是完整替换掉模型自带的眼睛，所以换表情时旧的不会叠在下面。 */
+function faceCanvas(persona, key, kind){
   const L = FACE_LAYOUT[key];
   const W = 512, H = Math.round(W * L.h / FACE_W);
   const c = document.createElement('canvas');
@@ -779,104 +801,41 @@ function faceCanvas(persona, key){
   const eyeL = (0.5 - L.ex) * W, eyeR = (0.5 + L.ex) * W;
   const cyPx = H * 0.5;
 
-  if(persona === 'cool'){
-    /* 装酷：一副墨镜直接盖住原眼睛，天然成立，不需要跟身体颜色对齐。
-       镜片要比身体亮一档、再描一圈亮边，否则整张脸会糊成一块黑 */
-    const lensW = L.ew * 1.70 * W;
-    const lensH = Math.max(L.eh * 1.72 * H, 30);
-    const y0    = cyPx - lensH / 2;
-    const rr    = lensH * 0.46;
-    const lens  = [eyeL - lensW / 2, eyeR - lensW / 2];
-
-    // 镜腿：从镜片外侧向画布边缘延伸
-    g.fillStyle = '#1A1922';
-    const armH = Math.max(4, lensH * 0.16);
-    g.fillRect(0, cyPx - armH / 2, lens[0] + 2, armH);
-    g.fillRect(lens[1] + lensW - 2, cyPx - armH / 2, W - (lens[1] + lensW) + 2, armH);
-
-    // 镜片本体
-    g.save();
-    g.shadowColor = 'rgba(8,6,4,.55)';
-    g.shadowBlur = lensH * 0.40;
-    g.shadowOffsetY = lensH * 0.14;
-    g.fillStyle = '#1A1922';
-    lens.forEach(x => { roundRect(g, x, y0, lensW, lensH, rr); g.fill(); });
-    g.restore();
-
-    // 鼻梁
-    const bridgeW = (eyeR - eyeL) - lensW + 4;
-    if(bridgeW > 0){
-      g.fillStyle = '#1A1922';
-      g.fillRect(lens[0] + lensW - 2, cyPx - lensH * 0.12, bridgeW, lensH * 0.24);
+  /* ---------- 被炸到 ---------- */
+  if(kind === 'hurt'){
+    if(persona === 'cool'){
+      /* 装酷：墨镜被震歪、镜片裂了一道，但人没躲 —— 只是抬了抬下巴 */
+      drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, { rot: -0.14, crack: true });
+      sparkle(g, W * 0.815, cyPx - H * 0.40, Math.min(W, H) * 0.050);
+      sparkle(g, W * 0.905, cyPx - H * 0.24, Math.min(W, H) * 0.030);
+      return c;
     }
-
-    lens.forEach(x => {
-      // 亮边：让墨镜的轮廓从黑色身体上分离出来
-      g.save();
-      roundRect(g, x, y0, lensW, lensH, rr);
-      g.strokeStyle = 'rgba(255,255,255,.30)';
-      g.lineWidth = Math.max(1.6, lensH * 0.055);
-      g.stroke();
-      g.restore();
-
-      // 镜片高光：斜向一道，读得出是玻璃
-      g.save();
-      roundRect(g, x, y0, lensW, lensH, rr);
-      g.clip();
-      const lg = g.createLinearGradient(x, y0, x + lensW * 0.92, y0 + lensH);
-      lg.addColorStop(0, 'rgba(255,255,255,.30)');
-      lg.addColorStop(.30, 'rgba(255,255,255,.05)');
-      lg.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = lg;
-      g.fillRect(x, y0, lensW, lensH);
-
-      // 底缘一点点反光，玻璃感更足
-      const bg2 = g.createLinearGradient(0, y0 + lensH * 0.72, 0, y0 + lensH);
-      bg2.addColorStop(0, 'rgba(255,255,255,0)');
-      bg2.addColorStop(1, 'rgba(255,255,255,.16)');
-      g.fillStyle = bg2;
-      g.fillRect(x, y0 + lensH * 0.72, lensW, lensH * 0.28);
-      g.restore();
+    if(persona === 'shy'){
+      /* 腼腆：眼睛挤成 >_<、整个人缩起来，脸红得更厉害 */
+      drawBlush(g, W, H, eyeL, eyeR, cyPx, L, 1.15, 0.70, 0.23);
+      drawSqueeze(g, eyeL, cyPx, L, W, H, 1);
+      drawSqueeze(g, eyeR, cyPx, L, W, H, -1);
+      return c;
+    }
+    /* 热情：两只眼睛转成圈圈，脸边炸出小火花 */
+    const sr = Math.min(W, H) * 0.185;
+    drawSwirl(g, eyeL, cyPx, sr);
+    drawSwirl(g, eyeR, cyPx, sr * 0.94);
+    [[0.20, -0.30, 0.062], [0.80, -0.26, 0.048], [0.775, 0.32, 0.038]].forEach(([fx, fy, fr]) => {
+      sparkle(g, W * fx, cyPx + H * fy, Math.min(W, H) * fr, 'rgba(255,196,74,.95)');
     });
     return c;
   }
 
-  if(persona === 'shy'){
-    /* 腼腆：不遮眼睛，只在脸颊加两团晕，右边冒一颗小汗滴。
-       身体是深色的，腮红必须够浓才看得见 */
-    const blushR = L.ew * W * 0.80;
-    const blushY = cyPx + H * 0.19;
-    [eyeL - L.ew * W * 0.34, eyeR + L.ew * W * 0.34].forEach(cx => {
-      const rg = g.createRadialGradient(cx, blushY, 0, cx, blushY, blushR);
-      rg.addColorStop(0,   'rgba(255,74,108,.88)');
-      rg.addColorStop(.45, 'rgba(255,96,126,.52)');
-      rg.addColorStop(.78, 'rgba(255,120,148,.20)');
-      rg.addColorStop(1,   'rgba(255,140,164,0)');
-      g.fillStyle = rg;
-      g.beginPath(); g.arc(cx, blushY, blushR, 0, Math.PI * 2); g.fill();
-    });
+  /* ---------- 接到星星 ---------- */
+  if(persona === 'cool'){
+    drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, {});
+    return c;
+  }
 
-    // 汗滴
-    const dr = Math.min(W, H) * 0.105;
-    g.save();
-    g.translate(W * 0.846, H * 0.125);
-    g.beginPath();
-    g.moveTo(0, -dr * 1.62);
-    g.bezierCurveTo( dr * 0.98, -dr * 0.34,  dr * 0.88,  dr * 0.86, 0, dr * 0.96);
-    g.bezierCurveTo(-dr * 0.88,  dr * 0.86, -dr * 0.98, -dr * 0.34, 0, -dr * 1.62);
-    g.closePath();
-    const dg = g.createLinearGradient(0, -dr * 1.6, 0, dr);
-    dg.addColorStop(0, 'rgba(220,242,255,.98)');
-    dg.addColorStop(1, 'rgba(138,192,242,.96)');
-    g.fillStyle = dg;
-    g.fill();
-    g.strokeStyle = 'rgba(255,255,255,.75)';
-    g.lineWidth = Math.max(1.6, dr * 0.16);
-    g.stroke();
-    // 高光点
-    g.fillStyle = 'rgba(255,255,255,.92)';
-    g.beginPath(); g.ellipse(-dr * 0.28, -dr * 0.34, dr * 0.18, dr * 0.26, -0.4, 0, Math.PI * 2); g.fill();
-    g.restore();
+  if(persona === 'shy'){
+    /* 腼腆：不遮眼睛，只在脸颊加两团晕（汗滴已按要求去掉） */
+    drawBlush(g, W, H, eyeL, eyeR, cyPx, L, 1);
     return c;
   }
 
@@ -908,12 +867,155 @@ function faceCanvas(persona, key){
   return c;
 }
 
-function makeFaceMesh(key){
+/* 一副墨镜。只用"玻璃渐变 + 斜向高光 + 一枚星芒"来立住，
+   不加白色描边 —— 在手机那个尺寸下，白描边会读成一闪而过的白框眼镜。 */
+function drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, o){
+  o = o || {};
+  const lensW = L.ew * 1.50 * W;
+  const lensH = Math.max(L.eh * 1.62 * H, 26);
+  const y0    = cyPx - lensH * 0.54;
+  const rr    = lensH * 0.30;
+  const xs    = [eyeL - lensW * 0.5, eyeR - lensW * 0.5];
+
+  g.save();
+  if(o.rot){
+    g.translate(W * 0.5, cyPx);
+    g.rotate(o.rot);
+    g.translate(-W * 0.5, -cyPx);
+  }
+
+  // 镜腿：只伸出短短一截，不横贯整张脸
+  const armH = lensH * 0.19;
+  g.fillStyle = '#211E2B';
+  g.fillRect(xs[0] - W * 0.048, cyPx - armH * 0.5, W * 0.048 + 6, armH);
+  g.fillRect(xs[1] + lensW - 6, cyPx - armH * 0.5, W * 0.048, armH);
+
+  // 鼻梁
+  const bridgeW = (xs[1] - xs[0]) - lensW + 8;
+  if(bridgeW > 0) g.fillRect(xs[0] + lensW - 4, cyPx - lensH * 0.10, bridgeW, lensH * 0.20);
+
+  xs.forEach(x => {
+    // 镜片：上浅下深的玻璃，深色身体上也读得出"这是一副墨镜"
+    roundRect(g, x, y0, lensW, lensH, rr);
+    const lg = g.createLinearGradient(x, y0, x + lensW * 0.45, y0 + lensH);
+    lg.addColorStop(0,   '#3F3A4B');
+    lg.addColorStop(.45, '#24212E');
+    lg.addColorStop(1,   '#141220');
+    g.fillStyle = lg;
+    g.fill();
+
+    g.save();
+    roundRect(g, x, y0, lensW, lensH, rr);
+    g.clip();
+    // 斜向高光：墨镜"亮"的那一笔，靠它跟纯黑的身体分开（窄一点才不会糊成白片）
+    const sg = g.createLinearGradient(x, y0 + lensH * 0.95, x + lensW * 0.80, y0 + lensH * 0.05);
+    sg.addColorStop(0,   'rgba(255,255,255,0)');
+    sg.addColorStop(.40, 'rgba(255,255,255,.40)');
+    sg.addColorStop(.52, 'rgba(255,255,255,.07)');
+    sg.addColorStop(1,   'rgba(255,255,255,0)');
+    g.fillStyle = sg;
+    g.fillRect(x, y0, lensW, lensH);
+    g.restore();
+  });
+
+  // 右上角星芒：小尺寸下这枚星芒就是"墨镜反光"的主要读点，压在外侧边角上
+  sparkle(g, xs[1] + lensW * 0.96, y0 + lensH * 0.06, lensH * 0.26);
+
+  if(o.crack) drawCrack(g, xs[0] + lensW * 0.54, y0 + lensH * 0.52, lensW, lensH);
+  g.restore();
+}
+
+/* 四角星芒 / 火花 */
+function sparkle(g, cx, cy, r, color){
+  g.save();
+  g.fillStyle = color || 'rgba(255,255,255,.94)';
+  g.beginPath();
+  g.moveTo(cx, cy - r * 1.75);
+  g.quadraticCurveTo(cx + r * 0.18, cy - r * 0.18, cx + r * 1.75, cy);
+  g.quadraticCurveTo(cx + r * 0.18, cy + r * 0.18, cx, cy + r * 1.75);
+  g.quadraticCurveTo(cx - r * 0.18, cy + r * 0.18, cx - r * 1.75, cy);
+  g.quadraticCurveTo(cx - r * 0.18, cy - r * 0.18, cx, cy - r * 1.75);
+  g.fill();
+  g.restore();
+}
+
+/* 镜片上的裂纹 */
+function drawCrack(g, cx, cy, w, h){
+  g.save();
+  g.strokeStyle = 'rgba(255,255,255,.90)';
+  g.lineWidth = Math.max(2.4, h * 0.052);
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(cx - w * 0.30, cy - h * 0.46);
+  g.lineTo(cx - w * 0.06, cy - h * 0.10);
+  g.lineTo(cx + w * 0.12, cy - h * 0.26);
+  g.lineTo(cx + w * 0.02, cy + h * 0.12);
+  g.lineTo(cx + w * 0.22, cy + h * 0.46);
+  g.stroke();
+  g.restore();
+}
+
+/* 脸颊两团晕（shy 专用）。rScale / dy 可以单独压一压，被炸时脸不能糊成一团红 */
+function drawBlush(g, W, H, eyeL, eyeR, cyPx, L, k, rScale, dyRatio){
+  const blushR = L.ew * W * 0.80 * (rScale || 1);
+  const blushY = cyPx + H * (dyRatio == null ? 0.19 : dyRatio);
+  [eyeL - L.ew * W * 0.34, eyeR + L.ew * W * 0.34].forEach(cx => {
+    const rg = g.createRadialGradient(cx, blushY, 0, cx, blushY, blushR);
+    rg.addColorStop(0,   'rgba(255,74,108,' + (0.88 * k) + ')');
+    rg.addColorStop(.45, 'rgba(255,96,126,'  + (0.52 * k) + ')');
+    rg.addColorStop(.78, 'rgba(255,120,148,' + (0.20 * k) + ')');
+    rg.addColorStop(1,   'rgba(255,140,164,0)');
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(cx, blushY, blushR, 0, Math.PI * 2); g.fill();
+  });
+}
+
+/* 挤成 >_< 的眼睛：dir=1 左眼（尖角朝内），dir=-1 右眼。
+   先用深色描一遍做底，白线才不会糊进腮红里 */
+function drawSqueeze(g, cx, cy, L, W, H, dir){
+  const hw = L.ew * W * 0.46;
+  const hh = Math.min(L.eh * H * 0.42, hw * 0.82);
+  g.save();
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(cx - dir * hw, cy - hh);
+  g.lineTo(cx + dir * hw, cy);
+  g.lineTo(cx - dir * hw, cy + hh);
+  g.strokeStyle = 'rgba(16,10,14,.55)';
+  g.lineWidth = Math.max(6.5, hh * 0.86);
+  g.stroke();
+  g.strokeStyle = 'rgba(246,243,250,.98)';
+  g.lineWidth = Math.max(4.0, hh * 0.54);
+  g.stroke();
+  g.restore();
+}
+
+/* 圈圈眼（晕眩） */
+function drawSwirl(g, cx, cy, r){
+  g.save();
+  g.strokeStyle = 'rgba(255,255,255,.95)';
+  g.lineWidth = Math.max(3, r * 0.24);
+  g.lineCap = 'round';
+  g.beginPath();
+  for(let i = 0; i <= 100; i++){
+    const a  = (i / 100) * Math.PI * 2.55;
+    const rr = r * (i / 100) * 0.94;
+    const x  = cx + Math.cos(a) * rr;
+    const y  = cy + Math.sin(a) * rr * 0.92;
+    if(i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.stroke();
+  g.restore();
+}
+
+function makeFaceMesh(key, kind){
   if(!window.THREE) return null;
   const L = FACE_LAYOUT[key];
   if(!L) return null;
 
-  const tex = new THREE.CanvasTexture(faceCanvas(CHARS[key].persona, key));
+  const tex = new THREE.CanvasTexture(faceCanvas(CHARS[key].persona, key, kind));
   if('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
 
@@ -929,12 +1031,14 @@ function makeFaceMesh(key){
   mesh.position.set(0, L.cy, L.cz);
   mesh.renderOrder = 20;
   mesh.visible = false;
+  mesh.userData.hold = 0;                       // 亮着不淡出的剩余时间
+  mesh.userData.fade = (kind === 'hurt') ? 1.50 : 1.20;
   return mesh;
 }
 
-/* 接星时把表情点亮；同时把原来的眼睛藏起来 —— 墨镜 / 爱心眼是一整套新眼睛，
-   叠在旧眼白上会很怪。dd（腼腆）不换眼睛，只在脸颊加晕，所以不藏。 */
-const personaKeepsEyes = k => (CHARS[k] || CHARS.v).persona === 'shy';
+/* 接星 / 被炸各一张脸。切换时把另一张直接关掉，旧表情不会残留在下面。
+   只有 dd 的接星表情（只加腮红）保留模型自带的眼睛，其余全部遮掉。 */
+const personaKeepsEyes = (k, kind) => kind === 'catch' && (CHARS[k] || CHARS.v).persona === 'shy';
 
 function setEyesVisible(key, on){
   const c = modelCache[key];
@@ -942,13 +1046,25 @@ function setEyesVisible(key, on){
   c.eyeMats.forEach(m => { m.visible = on; });
 }
 
-function showFace(){
+function hideFaceMesh(m){
+  if(!m) return;
+  m.material.opacity = 0;
+  m.visible = false;
+  m.userData.hold = 0;
+}
+
+function showFace(kind, hold){
   const key = G.char;
   const c = modelCache[key];
-  if(!c || !c.face) return;
-  c.face.material.opacity = 1;
-  c.face.visible = true;
-  if(!personaKeepsEyes(key)) setEyesVisible(key, false);
+  if(!c || !c.faces || !c.faces[kind]) return;
+
+  Object.keys(c.faces).forEach(k => { if(k !== kind) hideFaceMesh(c.faces[k]); });
+
+  const m = c.faces[kind];
+  m.material.opacity = 1;
+  m.visible = true;
+  m.userData.hold = hold || 0;
+  if(!personaKeepsEyes(key, kind)) setEyesVisible(key, false);
 }
 
 function loadThreeScript(){
@@ -1056,11 +1172,12 @@ function loadModel(key){
       const holder = new THREE.Group();
       holder.add(obj);
 
-      /* 表情层挂在归一化空间里：模型转、缩放，它都跟着走，不会错位 */
-      const face = makeFaceMesh(key);
-      if(face) holder.add(face);
+      /* 表情层挂在归一化空间里：模型转、缩放，它都跟着走，不会错位。
+         接星 / 被炸各一张，同一时间只会亮一张 */
+      const faces = { catch: makeFaceMesh(key, 'catch'), hurt: makeFaceMesh(key, 'hurt') };
+      Object.keys(faces).forEach(k => { if(faces[k]) holder.add(faces[k]); });
 
-      modelCache[key] = { holder, face, eyeMats, aspect: size.x / Math.max(size.y, 1e-6) };
+      modelCache[key] = { holder, faces, eyeMats, aspect: size.x / Math.max(size.y, 1e-6) };
       applyModel(key);
       resolve(true);
     }, undefined, () => resolve(false));
@@ -1075,7 +1192,7 @@ function applyModel(key){
   Object.keys(modelCache).forEach(k => {
     const m = modelCache[k];
     setEyesVisible(k, true);
-    if(m.face){ m.face.material.opacity = 0; m.face.visible = false; }
+    if(m.faces) Object.keys(m.faces).forEach(x => hideFaceMesh(m.faces[x]));
   });
 
   while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
@@ -1095,16 +1212,21 @@ function applyModel(key){
 function syncR3(dt){
   if(!R3.ok || !R3.ready) return;
 
-  /* 表情淡出：每次接到星星点亮，之后自己退掉；退干净时把原眼睛放回去 */
+  /* 表情淡出：亮够时间之后自己退掉；退到一半就把原眼睛放回去，
+     否则最后那段"脸已经淡没、眼睛也没回来"会变成一脸空眼眶 */
   Object.keys(modelCache).forEach(k => {
-    const f = modelCache[k].face;
-    if(!f || !f.visible) return;
-    f.material.opacity -= dt * 0.85;
-    if(f.material.opacity <= 0.001){
-      f.material.opacity = 0;
-      f.visible = false;
-      if(!personaKeepsEyes(k)) setEyesVisible(k, true);
-    }
+    const fs2 = modelCache[k].faces;
+    if(!fs2) return;
+    Object.keys(fs2).forEach(x => {
+      const f = fs2[x];
+      if(!f || !f.visible) return;
+      if(f.userData.hold > 0){ f.userData.hold -= dt; return; }
+      f.material.opacity -= dt * f.userData.fade;
+      if(f.material.opacity <= 0.001) hideFaceMesh(f);
+    });
+    const strong = Object.keys(fs2).some(x =>
+      fs2[x] && fs2[x].visible && fs2[x].material.opacity >= 0.45);
+    if(!strong) setEyesVisible(k, true);
   });
 
   // 只在游戏进行中登场（扫描页 / 选择页 / 拍照页都不显示）
@@ -1161,12 +1283,16 @@ function syncR3(dt){
     scaleM *= p.scale;
   }
 
-  /* ---------- 被炸：压缩一下再弹回 ---------- */
+  /* ---------- 被炸：三个性格三套反应 ---------- */
   if(a.hurt > 0){
-    const q = a.hurt / HURT_DUR;
-    const w = Math.sin(q * Math.PI) * 0.20;
-    sy  -= w;
-    sx  += w * 1.2;
+    const q = hurtPose(persona, 1 - a.hurt / (a.hurtMax || HURT_DUR));
+    yOff   += q.dy * hW;
+    rotX   += q.rotX;
+    rotY   += q.rotY;
+    rotZ   += q.rotZ;
+    sx     *= q.sx;
+    sy     *= q.sy;
+    scaleM *= q.scale;
   }
 
   if(sp.mood === 'sad'){
@@ -1177,9 +1303,10 @@ function syncR3(dt){
 
   if(G.stun > 0){
     const k = clamp(G.stun / CONFIG.stunDuration, 0, 1);
-    rotZ += Math.sin(t * 31) * 0.17 * k;
-    yOff += Math.sin(t * 44) * 0.011 * hW * k;
-    rotY += Math.sin(t * 13) * 0.40 * k;
+    const sa = P.stun;
+    rotZ += Math.sin(t * 31) * 0.17 * k * sa;
+    yOff += Math.sin(t * 44) * 0.011 * hW * k * sa;
+    rotY += Math.sin(t * 13) * 0.40 * k * sa;
   }
 
   R3.group.position.set(wx, wy + yOff, 0);
@@ -1192,11 +1319,59 @@ function syncR3(dt){
 const HIT_DUR  = 0.62;   // 接到星星的整套动作时长（默认，按性格会变）
 const HURT_DUR = 0.42;   // 被炸到后的压缩回弹时长
 
+/* 被炸到的动作包络：e 从 0 → 1。三个性格反应完全不同 ——
+   cool 硬撑不躲 / warm 被弹飞 / shy 缩成一团 */
+function hurtPose(persona, e){
+  const k = Math.sin(e * Math.PI);                 // 0→1→0
+  const shake = Math.sin(e * Math.PI * 5) * (1 - e * 0.55);
+
+  if(persona === 'cool'){
+    /* 装酷：几乎不动，只是身体一沉、抬下巴、把脸别开 */
+    return {
+      dy: -k * 0.012,
+      rotX: -k * 0.09,
+      rotY: k * 0.17,
+      rotZ: shake * 0.030,
+      sx: 1 + k * 0.012,
+      sy: 1 - k * 0.018,
+      scale: 1 - k * 0.008,
+    };
+  }
+  if(persona === 'shy'){
+    /* 腼腆：缩起来、低头，小幅高频抖，不敢看 */
+    return {
+      dy: -k * 0.040,
+      rotX: k * 0.24,
+      rotY: shake * 0.10,
+      rotZ: shake * 0.085,
+      sx: 1 + k * 0.065,
+      sy: 1 - k * 0.105,
+      scale: 1 - k * 0.090,
+    };
+  }
+  /* 热情：整个人被弹起一截，落回来还要晃两下 */
+  return {
+    dy: k * 0.150,
+    rotX: k * 0.30,
+    rotY: shake * 0.28,
+    rotZ: shake * 0.20,
+    sx: 1 + k * 0.090,
+    sy: 1 - k * 0.150,
+    scale: 1 - k * 0.050,
+  };
+}
+
 /* 动作时长也跟着性格走：装酷慢悠悠、腼腆只缩一下、热情一蹦到底 */
 function hitDurFor(persona){
   if(persona === 'cool') return 0.82;
   if(persona === 'shy')  return 0.54;
   return 0.62;
+}
+
+function hurtDurFor(persona){
+  if(persona === 'cool') return 0.95;
+  if(persona === 'shy')  return 0.62;
+  return 0.80;
 }
 
 /* three 还没加载完时先记下来，加载完再补 */
@@ -1449,7 +1624,7 @@ function onCatch(it){
   setMood('happy', dur + 0.12);
   R3.anim.hitMax = dur;
   R3.anim.hit = dur;
-  showFace();                      // 表情亮一下，自己会淡出
+  showFace('catch');               // 表情亮一下，自己会淡出
 
   burst(it.x, it.y, '#FFC24A', 16, 260*S);
   burst(it.x, it.y, '#FFF3C4', 8, 180*S);
@@ -1466,8 +1641,12 @@ function onBomb(it){
   G.hits++;
   G.stun = CONFIG.stunDuration;
   G.shake = Math.max(G.shake, 1);
+  const persona = (CHARS[G.char] || CHARS.v).persona;
+  const hd = hurtDurFor(persona);
   setMood('stun', CONFIG.stunDuration);
-  R3.anim.hurt = HURT_DUR;
+  R3.anim.hurtMax = hd;
+  R3.anim.hurt = hd;
+  showFace('hurt', CONFIG.stunDuration * 0.9);   // 被炸的表情亮着，等眩晕快结束再淡出
 
   /* 被炸扣一颗已得到的星星；一颗都没有时不加不减 */
   const lost = G.score > 0;
@@ -1700,8 +1879,8 @@ function drawSprite2D(){
     }
     if(G.stun > 0){
       const k = clamp(G.stun / CONFIG.stunDuration, 0, 1);
-      rot += Math.sin(t * 31) * 0.16 * k;
-      dy  += Math.sin(t * 44) * 0.010 * h * k;
+      rot += Math.sin(t * 31) * 0.16 * k * P.stun;
+      dy  += Math.sin(t * 44) * 0.010 * h * k * P.stun;
     }
     // 接到星星：套和 3D 完全同一套包络，两套兜底视觉不会不一致
     if(R3.anim.hit > 0){
@@ -1711,10 +1890,13 @@ function drawSprite2D(){
       scy *= p.sy;
       rot += p.rotZ * 1.6;
     }
-    // 被炸：压缩
+    // 被炸：和 3D 同一套性格包络
     if(R3.anim.hurt > 0){
-      const w = Math.sin(R3.anim.hurt / HURT_DUR * Math.PI) * 0.20;
-      scy -= w; scx += w * 1.2;
+      const q = hurtPose(persona, 1 - R3.anim.hurt / (R3.anim.hurtMax || HURT_DUR));
+      dy  -= q.dy * h;
+      scx *= q.sx;
+      scy *= q.sy;
+      rot += q.rotZ * 1.6;
     }
 
     ctx.save();
@@ -2212,7 +2394,7 @@ function resetGame(){
   Object.keys(modelCache).forEach(k => {
     const m = modelCache[k];
     setEyesVisible(k, true);
-    if(m.face){ m.face.material.opacity = 0; m.face.visible = false; }
+    if(m.faces) Object.keys(m.faces).forEach(x => hideFaceMesh(m.faces[x]));
   });
   buildSlots(); renderSlots();
   tipEl.textContent = '拖动屏幕移动小精灵';
@@ -2363,7 +2545,6 @@ const capStage = document.getElementById('capStage');
 const capTpl   = document.getElementById('capTemplate');
 const tplStrip = document.getElementById('tplStrip');
 const shotImg  = document.getElementById('shotImg');
-const saveBtn  = document.getElementById('saveBtn');
 let shotDataUrl = '';
 let tplSel = null;                 // 当前选中的合照模板
 
@@ -2565,11 +2746,18 @@ function shoot(){
 
   shotDataUrl = cc.toDataURL('image/jpeg', 0.92);
   shotImg.src = shotDataUrl;
-  saveBtn.href = shotDataUrl;
-  saveBtn.setAttribute('download', 'VAD合照.jpg');
 
   SFX.shutter();
+  capEl.classList.add('hide');      // 取景页先收掉，结果页才是干净的透明底
   shotEl.classList.remove('hide');
+}
+
+/* 重新拍摄：结果页收掉、取景页放回来（实景一直开着，不用重开摄像头） */
+function retake(){
+  ensureAudio();
+  shotEl.classList.add('hide');
+  capEl.classList.remove('hide');
+  if(!camStream) openCam(camFacing); else ensureCamBg();
 }
 
 /* =========================================================================
@@ -2645,6 +2833,7 @@ document.getElementById('changeBtn').addEventListener('click', () => { ensureAud
 document.getElementById('shotBtn').addEventListener('click', () => { openCapture(); });
 document.getElementById('capBack').addEventListener('click', () => { closeCapture(); });
 document.getElementById('shootBtn').addEventListener('click', () => { shoot(); });
+document.getElementById('retakeBtn').addEventListener('click', () => { retake(); });
 document.getElementById('shotDone').addEventListener('click', () => { closeCapture(); });
 capFlipBtn.addEventListener('click', () => { ensureAudio(); flipCamera(); });
 camFailBtn.addEventListener('click', () => { enterGame(); });
@@ -2690,9 +2879,9 @@ loadThreeScript().then(ok => {
 
 window.__GAME = { G, CONFIG, CHARS, TEMPLATES, SCAN, ANIM, R3, modelCache,
                   enterGame, prepareAndPlay, showIntro, analyzeMarker, bootScan,
-                  openCapture, shoot, closeCapture, flipCamera, gameOver,
+                  openCapture, shoot, closeCapture, retake, flipCamera, gameOver,
                   selectTemplate, templateFor, scanSuccess: onScanSuccess,
-                  onCatch, setEyesVisible, drawCamBg,
+                  onCatch, onBomb, showFace, setEyesVisible, drawCamBg,
                   get tplSel(){ return tplSel; },
                   get camFacing(){ return camFacing; } };
 })();
