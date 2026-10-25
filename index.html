@@ -176,58 +176,14 @@
   }
   #scanTip.hide{display:none}
 
-  /* ---------- 探索：寻找平面 ---------- */
-  #planeHunt{
-    position:absolute;inset:0;z-index:30;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;
-    background:rgba(12,10,9,.52);
-    -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
-    transition:opacity .3s ease;
-  }
-  #planeHunt.hide{opacity:0;visibility:hidden;pointer-events:none;display:none}
-  #planeHunt .ph{
-    display:flex;flex-direction:column;align-items:center;gap:18px;
-    color:#fff;text-align:center;
-  }
-  #planeHunt .phTitle{
-    font-size:15px;font-weight:700;letter-spacing:.06em;
-    padding:8px 20px;border-radius:99px;background:rgba(20,16,14,.5);
-  }
-  /* 一圈会转的虚线环：找平面时的"雷达" */
-  #planeHunt .ring{
-    width:132px;height:132px;border-radius:50%;
-    border:2px dashed rgba(255,255,255,.5);
-    position:relative;animation:planeSpin 3.4s linear infinite;
-  }
-  #planeHunt .ring::before,
-  #planeHunt .ring::after{
-    content:'';position:absolute;inset:14px;border-radius:50%;
-    border:1.5px solid rgba(255,209,102,.0);
-  }
-  #planeHunt .ring::after{inset:30px;animation:planePulse 1.6s ease-out infinite}
-  @keyframes planeSpin{to{transform:rotate(360deg)}}
-  @keyframes planePulse{
-    0%{border-color:rgba(255,209,102,.75);inset:44px}
-    100%{border-color:rgba(255,209,102,0);inset:2px}
-  }
-  #planeHunt .phHint{font-size:12.5px;color:rgba(255,255,255,.72);letter-spacing:.04em}
-  /* 找到之后换成对钩 */
-  #planeHunt.lock .ring{animation:none;border-style:solid;border-color:rgba(255,209,102,.95)}
-  #planeHunt.lock .ring::after{animation:none;border-color:rgba(255,209,102,0)}
-  #planeHunt.lock .phTitle{background:rgba(255,209,102,.92);color:#4A3105}
-  @media (prefers-reduced-motion:reduce){
-    #planeHunt .ring{animation:none}
-    #planeHunt .ring::after{animation:none}
-  }
-
-  /* 探索场景的返回 */
+  /* 探索：扫描页左上角的返回（不然这条线进去就出不来） */
   #exploreBack{
-    position:absolute;z-index:6;
-    left:50%;transform:translateX(-50%);
-    bottom:calc(env(safe-area-inset-bottom,0px) + 26px);
-    padding:11px 26px;border-radius:99px;border:none;
+    position:absolute;z-index:31;
+    left:14px;
+    top:calc(env(safe-area-inset-top,0px) + 14px);
+    padding:9px 18px;border-radius:99px;border:none;
     background:rgba(20,16,14,.5);color:#fff;
-    font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:.04em;
+    font-family:inherit;font-size:13px;font-weight:600;letter-spacing:.04em;
     -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
     cursor:pointer;display:none;
   }
@@ -538,16 +494,7 @@
   <canvas id="three"></canvas>
   <canvas id="game"></canvas>
 
-  <!-- 探索：寻找平面 -->
-  <div id="planeHunt" class="hide">
-    <div class="ph">
-      <div class="ring"></div>
-      <div class="phTitle">正在寻找平面…</div>
-      <div class="phHint">把手机对着地面，稍微晃一晃</div>
-    </div>
-  </div>
-
-  <button id="exploreBack" type="button">返回扫描</button>
+  <button id="exploreBack" type="button">返回</button>
 
   <div id="hud">
     <div id="slots"></div>
@@ -854,7 +801,6 @@ const photoPh   = document.getElementById('photoPh');
 const hintEl    = document.getElementById('resultHint');
 const capFlipBtn = document.getElementById('capFlip');
 const scanTipEl  = document.getElementById('scanTip');
-const planeHuntEl= document.getElementById('planeHunt');
 const exploreBtn = document.getElementById('exploreBtn');
 const exploreBackEl = document.getElementById('exploreBack');
 
@@ -897,7 +843,7 @@ const SPRITE_ASPECT = 2995 / 2363;   // 三张角色图的统一宽高比
    3. 状态
    ========================================================================= */
 const G = {
-  state: 'scan',            // scan | intro | playing | over | capture | plane | exploreShow
+  state: 'scan',            // scan | intro | playing | over | capture
   phase: 'play',            // play = 扫描三个图形进游戏；explore = 扫描水滴看它们在干什么
   char: 'v',
   t: 0,
@@ -1305,83 +1251,10 @@ function initR3(){
   R3.group = new THREE.Group();
   R3.world.add(R3.group);
 
-  R3.plane = makePlaneMesh();
-  R3.plane.visible = false;
-  R3.world.add(R3.plane);
-
-  /* 人压在平面上的接触影：跟着人一起滑，才有"贴着地蹭"的实感 */
-  R3.shadow = makeBlobShadow();
-  R3.shadow.visible = false;
-  R3.world.add(R3.shadow);
-
   R3.ok = true;
   updateR3Layout();
   return true;
 }
-
-/* "识别到的平面"：一张带柔光圆斑的透明面片，平铺在脚下。
-   强度刻意压得很低 —— 它是提示，不是主角。 */
-function makePlaneMesh(){
-  const S = 256;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = S;
-  const g = cv.getContext('2d');
-
-  const rg = g.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
-  rg.addColorStop(0,    'rgba(255,255,255,.13)');
-  rg.addColorStop(0.55, 'rgba(255,255,255,.07)');
-  rg.addColorStop(1,    'rgba(255,255,255,0)');
-  g.fillStyle = rg;
-  g.fillRect(0, 0, S, S);
-
-  // 两圈细线，像扫描出来的边界
-  g.strokeStyle = 'rgba(255,246,232,.42)';
-  g.lineWidth = 2;
-  g.beginPath(); g.arc(S/2, S/2, S * 0.44, 0, Math.PI * 2); g.stroke();
-  g.strokeStyle = 'rgba(255,196,74,.34)';
-  g.setLineDash([10, 12]);
-  g.beginPath(); g.arc(S/2, S/2, S * 0.34, 0, Math.PI * 2); g.stroke();
-
-  const tex = new THREE.CanvasTexture(cv);
-  if('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 2.7), mat);
-  mesh.rotation.x = -Math.PI / 2;      // 平铺在 XZ 面上
-  mesh.renderOrder = -1;
-  return mesh;
-}
-
-/* 一块柔和的接触影（圆形渐变），贴在平面下方一点点 */
-function makeBlobShadow(){
-  const S = 128;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = S;
-  const g = cv.getContext('2d');
-  const rg = g.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
-  rg.addColorStop(0,   'rgba(10,8,6,.55)');
-  rg.addColorStop(.55, 'rgba(10,8,6,.28)');
-  rg.addColorStop(1,   'rgba(10,8,6,0)');
-  g.fillStyle = rg;
-  g.beginPath(); g.arc(S/2, S/2, S/2, 0, Math.PI * 2); g.fill();
-
-  const tex = new THREE.CanvasTexture(cv);
-  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 1.05), mat);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.y = 0.002;
-  mesh.renderOrder = -1;
-  return mesh;
-}
-
-/* 探索场景的参数：整体倾多少、人多长、擦地多远 */
-const EXPLORE = {
-  tilt: 0.42,        // 世界绕 X 转多少：把地面转成"从上往下看"的角度
-  rotX: -1.05,       // 人躺下的角度（-90° 是正躺平；-60° 是半躺）
-  drop: -0.62,       // 整块往下挪，人落在画面下半
-  scale: 0.70,       // 人的长度（模型归一化后高度 = 1）
-  travel: 0.26,      // 前后擦地的距离
-  period: 1.50,      // 一个来回几秒
-};
 
 function updateR3Layout(){
   if(!R3.ok) return;
@@ -1502,21 +1375,15 @@ function syncR3(dt){
     if(!strong) setEyesVisible(k, true);
   });
 
-  /* 两个场景共用这一套渲染：游戏里站着，探索里躺在地上擦地；
-     扫描 / 选择 / 拍照一律不显示 */
+  /* 只有游戏里站着的那一幕需要 3D 形象；
+     扫描 / 选择 / 拍照 / 探索一律不显示 */
   const playing = (G.state === 'playing');
-  const showing = (G.state === 'exploreShow');
-  R3.group.visible = playing || showing;
-  if(R3.plane)  R3.plane.visible  = showing;
-  if(R3.shadow) R3.shadow.visible = showing;
-  R3.world.rotation.x = showing ? EXPLORE.tilt : 0;
-  R3.world.position.y = showing ? EXPLORE.drop : 0;
+  R3.group.visible = playing;
 
-  if(!playing && !showing){
+  if(!playing){
     R3.renderer.render(R3.scene, R3.camera);
     return;
   }
-  if(showing){ syncExploreShow(dt); return; }
 
   const sp = G.sprite, a = R3.anim;
   const persona = (CHARS[G.char] || CHARS.v).persona;
@@ -1593,43 +1460,6 @@ function syncR3(dt){
   R3.group.position.set(wx, wy + yOff, 0);
   R3.group.rotation.set(rotX, rotY, rotZ);
   R3.group.scale.set(hW * scaleM * sx, hW * scaleM * sy, hW * scaleM * (sx + sy) * 0.5);
-
-  R3.renderer.render(R3.scene, R3.camera);
-}
-
-/* 探索：vv 仰面躺在地上，前后滑着擦地。
-   模型是静态网格（没有骨骼），所以"手上下滑动"用整个人在地面上推拉来表达：
-   推出去慢、收回来稍快，推到底时身体轻轻一沉 —— 读起来就是在使劲蹭。 */
-function syncExploreShow(dt){
-  const a = R3.anim;
-  a.t += dt;
-  const t = a.t;
-
-  const ph   = (t / EXPLORE.period) * Math.PI * 2;
-  const push = Math.sin(ph);            // -1..1 前后
-  const ease = Math.sin(ph - 0.5);      // 错开一点，推出去时更"用力"
-
-  R3.group.position.set(
-    0,
-    0.012 + Math.max(0, ease) * 0.010,  // 贴着地，回收时抬一点点
-    ease * EXPLORE.travel
-  );
-  R3.group.rotation.set(
-    EXPLORE.rotX + Math.max(0, ease) * 0.05,   // 推的时候身体再往前压一点
-    push * 0.09,                               // 蹭的时候轻微拧一下
-    0
-  );
-  /* 推的那一下往地里压一点：局部 Z 是脸的朝向，躺下之后就是"上下"，
-     压它等于把身体按在地面上，蹭的力气就出来了 */
-  const press = Math.max(0, push);
-  R3.group.scale.set(EXPLORE.scale * (1 + press * 0.03),
-                     EXPLORE.scale * (1 + press * 0.02),
-                     EXPLORE.scale * (1 - press * 0.12));
-
-  // 影子跟着人走，位置略后方一点
-  if(R3.shadow){
-    R3.shadow.position.set(0, 0.002, ease * EXPLORE.travel * 0.9);
-  }
 
   R3.renderer.render(R3.scene, R3.camera);
 }
@@ -2268,8 +2098,7 @@ function render(){
      对 video 的 object-fit 支持不一致，会把画面缩成中间一块、四周露出底色。
      自己画就永远是整屏铺满，任何设备结果一致。
      只有真正看得见实景的三个状态才画，白底页面不浪费这一笔。 */
-  const needBg = (G.state === 'scan' || G.state === 'playing' || G.state === 'capture'
-                  || G.state === 'plane' || G.state === 'exploreShow');
+  const needBg = (G.state === 'scan' || G.state === 'playing' || G.state === 'capture');
   if(needBg) drawCamBg();
 
   /* 拍照页：识脸步骤画那个圆圈，合照步骤把定格的脸贴到小人脖子上 */
@@ -2278,9 +2107,8 @@ function render(){
     else paintFacePatch();
   }
 
-  // 识别 / 选择 / 拍照 / 找平面 / 探索展示：只留实景，不画游戏元素
-  if(G.state === 'scan' || G.state === 'intro' || G.state === 'capture'
-     || G.state === 'plane' || G.state === 'exploreShow') return;
+  // 识别 / 选择 / 拍照：只留实景，不画游戏元素
+  if(G.state === 'scan' || G.state === 'intro' || G.state === 'capture') return;
   ctx.save();
   if(G.shake > 0){
     const m = G.shake * 12 * S;
@@ -2596,6 +2424,7 @@ function updateScan(dt){
     }
   } else {
     SCAN.hits = Math.max(0, SCAN.hits - 1);
+    if(SCAN.hits === 0) dropSeen = false;      // 图形挪开了，下次再扫还能给反馈
   }
 
   const debugOn = /[?&]debug=1/.test(location.search || '');
@@ -2603,18 +2432,22 @@ function updateScan(dt){
   const seen = Math.min(r.found || 0, dbgNeed);
 
   // 角标随识别进度变暖：不占版面，但能看出"快好了"
-  scanFrameEl.classList.toggle('warm', SCAN.hits > 0);
+  if(!dropSeen) scanFrameEl.classList.toggle('warm', SCAN.hits > 0);
 
   if(r.ok){
-    scanDbg.textContent = '识别到三个图形，马上开始';
+    scanDbg.textContent = exploring ? '看到它们了 · 正忙着呢' : '识别到三个图形，马上开始';
   } else if(debugOn){
     scanDbg.textContent = '搜索中 · 看到 ' + seen + '/' + dbgNeed
       + ' · 对比 ' + Math.round(r.contrast || 0) + ' · 阈值 ' + Math.round(r.th || 0)
       + ' · 暗 ' + r.darkPct.toFixed(0) + '%';
+  } else if(dropSeen){
+    scanDbg.textContent = '它们仨忙得不可开交';
   } else if(seen === 0){
-    scanDbg.textContent = '把墙上三个图形一起放进框内';
+    scanDbg.textContent = exploring ? '把那个图形放进框里看看'
+                                    : '把墙上三个图形一起放进框内';
   } else {
-    scanDbg.textContent = '已看到 ' + seen + '/' + need + ' · 再退后一点让三个都进框';
+    scanDbg.textContent = exploring ? '已看到 · 再凑近一点'
+                                    : '已看到 ' + seen + '/' + need + ' · 再退后一点让三个都进框';
   }
 }
 
@@ -2808,6 +2641,7 @@ async function bootScan(){
   G.phase = 'play';
   scanTipEl.classList.add('hide');
   exploreBackEl.classList.remove('show');
+  dropSeen = false;
   scanEl.classList.remove('hide');
   introEl.classList.add('hide');
   resultEl.classList.add('hide');
@@ -2833,27 +2667,12 @@ async function bootScan(){
 }
 
 /* =========================================================================
-   探索线：照片页「继续探索」→ 扫水滴 → 找平面 → vv 躺在地上擦地
+   探索线：照片页「继续探索」→ 扫水滴，停在这里
    ========================================================================= */
 const wait = ms => new Promise(r => setTimeout(r, ms));
+let dropSeen = false;          // 已经扫到过水滴（闩住，免得一直闪）
 
-/* 模型没进缓存就等一下（loadModel 是异步的） */
-function ensureModel(key){
-  return new Promise(res => {
-    if(modelCache[key]){ applyModel(key); res(true); return; }
-    if(!R3.ok){ res(false); return; }
-    loadModel(key);
-    const t0 = Date.now();
-    const tick = () => {
-      if(modelCache[key]){ applyModel(key); res(true); return; }
-      if(Date.now() - t0 > 8000){ res(false); return; }
-      setTimeout(tick, 60);
-    };
-    tick();
-  });
-}
-
-/* 从照片页进探索：回到扫描页，但换成"找水滴"这套判据 */
+/* 从照片页进探索：回到扫描页，换成"找水滴"这套判据 */
 async function startExplore(){
   ensureAudio();
   shotEl.classList.add('hide');
@@ -2867,8 +2686,10 @@ async function startExplore(){
 
   scanEl.classList.remove('hide');
   scanTipEl.classList.remove('hide');
+  exploreBackEl.classList.add('show');
   scanDbg.textContent = '';
   SCAN.hits = 0;
+  dropSeen = false;
   scanFrameEl.classList.remove('warm');
 
   if(!camStream || camFacing !== 'environment'){
@@ -2880,55 +2701,31 @@ async function startExplore(){
   SCAN.running = true;
 }
 
-/* 扫到水滴 → 找平面。
-   浏览器里没有真正的平面检测（WebXR 在微信内核里用不了），
-   这两拍是"找平面"的过程全部：雷达转 → 锁定 → 人落上去。 */
+/* 扫到水滴：只给一拍"看到了"的反馈，然后就停在这里。
+   这一版探索就停在扫描页 —— 不跳走、不出人，扫描框一直活着可以反复扫。
+   dropSeen 是个闩：水滴还留在框里时不反复闪，挪开一会儿才允许再触发。 */
 async function onDropFound(){
-  if(!SCAN.running) return;
-  SCAN.running = false;
+  if(G.state !== 'scan' || !SCAN.running || dropSeen) return;
+  dropSeen = true;
   SFX.lock();
-
-  G.state = 'plane';
-  scanFrameEl.classList.remove('warm');
-  scanEl.classList.add('hide');
-  planeHuntEl.classList.remove('hide');
-  planeHuntEl.classList.remove('lock');
-  planeHuntEl.querySelector('.phTitle').textContent = '正在寻找平面…';
-  planeHuntEl.querySelector('.phHint').textContent  = '把手机对着地面，稍微晃一晃';
-
-  await wait(1100);
-  if(G.state !== 'plane') return;
-  planeHuntEl.classList.add('lock');
-  planeHuntEl.querySelector('.phTitle').textContent = '平面已找到';
-  planeHuntEl.querySelector('.phHint').textContent  = 'vv 正在上面擦地…';
-
-  await wait(900);
-  if(G.state !== 'plane') return;
-  planeHuntEl.classList.add('hide');
-  startExploreShow();
+  scanFrameEl.classList.add('warm');
+  scanDbg.textContent = '看到它们了 · 正忙着呢';
+  await wait(1200);
+  if(G.state === 'scan') scanFrameEl.classList.remove('warm');
 }
 
-/* 平面找到了：vv 躺上去擦地 */
-async function startExploreShow(){
+/* 左上角返回：回到照片页（那里还能再看照片、重新拍摄、再进来） */
+function exitExplore(){
+  exploreBackEl.classList.remove('show');
   scanEl.classList.add('hide');
   scanTipEl.classList.add('hide');
-  if(planeHuntEl) planeHuntEl.classList.add('hide');
-  G.char = 'v';
-  G.state = 'exploreShow';
-  R3.anim.t = 0;
-  await ensureModel('v');
-  exploreBackEl.classList.add('show');
-}
-
-/* 返回扫描：还是探索模式，可以再扫一次 */
-function exitExplore(){
-  G.state = 'scan';
-  exploreBackEl.classList.remove('show');
-  if(R3.plane) R3.plane.visible = false;
-  scanEl.classList.remove('hide');
-  scanTipEl.classList.remove('hide');
+  scanFrameEl.classList.remove('warm');
+  scanDbg.textContent = '';
+  SCAN.running = false;
   SCAN.hits = 0;
-  SCAN.running = true;
+  dropSeen = false;
+  G.state = 'capture';              // 和刚出片时的状态一致：照片页盖在上面
+  shotEl.classList.remove('hide');
 }
 
 /* 扫描成功 → 挑选角色页 */
@@ -3383,6 +3180,9 @@ async function openCapture(){
 async function closeCapture(){
   capEl.classList.add('hide');
   shotEl.classList.add('hide');
+  exploreBackEl.classList.remove('show');
+  G.phase = 'play';                 // 从探索线退出来，别把"找水滴"的判据带回去
+  dropSeen = false;
   document.body.classList.remove('capturing');
   resultEl.classList.remove('hide');
   G.state = 'over';
@@ -3620,9 +3420,9 @@ loadThreeScript().then(ok => {
 window.__GAME = { G, CONFIG, CHARS, TEMPLATES, SCAN, ANIM, R3, modelCache,
                   enterGame, prepareAndPlay, showIntro, analyzeMarker, bootScan,
                   openCapture, shoot, closeCapture, retake, flipCamera, gameOver,
-                  startExplore, onDropFound, startExploreShow, exitExplore, analyzeDrop, analyzeMarker,
+                  startExplore, onDropFound, exitExplore, analyzeDrop, analyzeMarker,
                   selectTemplate, templateFor, scanSuccess: onScanSuccess,
-                  onCatch, onBomb, showFace, setEyesVisible, drawCamBg, EXPLORE,
+                  onCatch, onBomb, showFace, setEyesVisible, drawCamBg,
                   setCapStep, captureFace, onShootTap, capCompose, paintScan, paintFacePatch,
                   get tplSel(){ return tplSel; },
                   get capStep(){ return capStep; },
