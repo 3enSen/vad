@@ -218,7 +218,8 @@
     text-align:center;padding:0 22px;
   }
   #photoCard img{
-    position:absolute;inset:0;width:100%;height:100%;
+    position:absolute;left:16px;top:16px;
+    width:calc(100% - 32px);height:calc(100% - 32px);
     object-fit:contain;display:none;
   }
   #photoCard.has-tpl img{display:block}
@@ -254,10 +255,14 @@
     display:flex;gap:9px;width:100%;
     padding:6px 18px 14px;
     overflow-x:auto;overflow-y:hidden;
-    justify-content:center;align-items:flex-end;
+    /* 用 auto 外边距居中，而不是 justify-content:center —— 后者在 5 张时会把
+       两头挤出屏幕，第一张卡还被裁掉一截且滑不回来 */
+    align-items:flex-end;
     flex:0 0 auto;scrollbar-width:none;
     -webkit-overflow-scrolling:touch;
   }
+  #tplStrip > .tplChip:first-child{margin-left:auto}
+  #tplStrip > .tplChip:last-child{margin-right:auto}
   #tplStrip::-webkit-scrollbar{display:none}
   #tplStrip:empty{display:none}
   /* 缩略图跟着模板改成横向（模板图本身就是横的） */
@@ -285,14 +290,6 @@
     box-shadow:0 9px 20px rgba(20,16,14,.18);
   }
 
-  /* 取景提示：背景是随时在变的实景，用深色胶囊保证永远读得清 */
-  #capTip{
-    flex:0 0 auto;margin:4px 0 4px;
-    font-size:12px;font-weight:600;letter-spacing:.04em;
-    color:#fff;padding:5px 15px;border-radius:99px;
-    background:rgba(20,16,14,.44);
-    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
-  }
   /* 合照舞台：整块透明，模板图由 JS 按比例摆进去 */
   #capStage{
     position:relative;flex:1 1 auto;
@@ -305,23 +302,18 @@
     object-fit:contain;
     filter:drop-shadow(0 16px 32px rgba(20,16,14,.26));
   }
-  /* 人脸贴片：一小块实景，直接贴在小人脖子上（就是拍出来的样子）。
-     画布每帧从摄像头里取中间那块脸重绘进去，所以这里看到的就是成片效果 */
+  /* 人脸贴片：一块椭圆形的实景，直接贴在小人脖子上（就是拍出来的样子）。
+     画布每帧从摄像头里取中间那块脸重绘进去；圆/椭圆由这里的圆角 + 羽化遮罩给出，
+     边缘柔一点才像"长上去的"，硬方角会很突兀。 */
   #capFaceCv{
     position:absolute;display:none;pointer-events:none;
-    border-radius:var(--rbox,8px);
-    box-shadow:0 3px 9px rgba(20,16,14,.30);
+    border-radius:50%;
+    filter:drop-shadow(0 2px 5px rgba(20,16,14,.34));
   }
-  /* 成片是 4:5，取景区里把这块标出来：框外压暗，框内就是拍到的画面 */
-  #capFrame{position:absolute;inset:0;pointer-events:none;overflow:hidden}
-  #capFrame i{
-    position:absolute;border-radius:8px;
-    box-shadow:0 0 0 9999px rgba(12,10,9,.38);
-  }
-  /* 反转镜头：挂在屏幕右上角（不再压在取景框上，不挡画面） */
+  /* 反转镜头：放在模板条下面一行，五张模板时不会被挡住 */
   #capFlip{
     position:absolute;z-index:5;
-    right:14px;top:calc(env(safe-area-inset-top,0px) + 14px);
+    right:14px;top:calc(env(safe-area-inset-top,0px) + 92px);
     width:42px;height:42px;border-radius:50%;border:none;
     background:rgba(20,16,14,.46);color:#fff;
     display:grid;place-items:center;cursor:pointer;
@@ -339,8 +331,10 @@
   #capBack{padding:15px 34px}
   #shootBtn{padding:15px 52px}
 
-  /* 拍照结果：整页透明（背后还是实景），中间只放一张带白边的照片 */
-  #shotSheet{justify-content:center;gap:14px}
+  /* 拍照结果：一块暖白底 + 一张带白边的照片。
+     这里不能再透明 —— 照片本身已经是米白底，页面再透出实景的话，
+     一眼还能看见自己，跟"合照"的感觉打架。 */
+  #shotSheet{justify-content:center;gap:14px;background:#EFE8DE}
   #shotTitle{
     font-size:12.5px;font-weight:700;letter-spacing:.12em;color:#fff;
     padding:6px 16px;border-radius:99px;background:rgba(20,16,14,.55);
@@ -488,12 +482,10 @@
   <!-- 拍照（整页透明：背景就是背后的摄像头实景） -->
   <div class="sheet clear hide" id="capture">
     <div id="tplStrip"></div>
-    <div id="capTip">把脸放进画面中间，身上直接出效果</div>
 
     <div id="capStage">
       <img id="capTemplate" alt="">
       <canvas id="capFaceCv"></canvas>
-      <div id="capFrame"><i></i></div>
     </div>
 
     <!-- 反转镜头：屏幕右上角 -->
@@ -513,7 +505,7 @@
     </div>
   </div>
 
-  <!-- 拍照结果：透明底 + 一张带白边的照片（网页存不进相册，改成提示长按保存） -->
+  <!-- 拍照结果：暖白底 + 一张带白边的照片（网页存不进相册，改成提示长按保存） -->
   <div class="sheet clear hide" id="shotSheet">
     <div id="shotTitle">拍好啦</div>
     <div id="shotFrame"><img id="shotImg" alt="合照"></div>
@@ -679,9 +671,9 @@ const TEMPLATES = [
 const TPL_H     = 0.50;
 const HEAD_FB   = 0.300;
 const HEAD_SEAT = 0.136;
-const HEAD_R    = 0.070;
 const FACE_CROP = 0.62;
 const FACE_CROPY= 0.40;
+const FACE_RY   = 1.06;        // 椭圆脸竖向半径 / 横向半径（略高，像颗头）
 
 /* 按星数取最高的那张模板 */
 function templateFor(stars){
@@ -1263,8 +1255,9 @@ function applyModel(key){
 function syncR3(dt){
   if(!R3.ok || !R3.ready) return;
 
-  /* 表情淡出：亮够时间之后自己退掉；退到一半就把原眼睛放回去，
-     否则最后那段"脸已经淡没、眼睛也没回来"会变成一脸空眼眶 */
+  /* 表情淡出：亮够时间之后自己退掉；几乎退干净了才把原眼睛放回去。
+     阈值不能太高 —— 抬到 0.45 时，dd 的 >_< 还淡淡地贴着，原眼睛已经回来了，
+     看起来就是"没遮住"；0.10 之后残影看不出来，也不会留空眼眶。 */
   Object.keys(modelCache).forEach(k => {
     const fs2 = modelCache[k].faces;
     if(!fs2) return;
@@ -1276,7 +1269,7 @@ function syncR3(dt){
       if(f.material.opacity <= 0.001) hideFaceMesh(f);
     });
     const strong = Object.keys(fs2).some(x =>
-      fs2[x] && fs2[x].visible && fs2[x].material.opacity >= 0.45);
+      fs2[x] && fs2[x].visible && fs2[x].material.opacity >= 0.10);
     if(!strong) setEyesVisible(k, true);
   });
 
@@ -2400,7 +2393,6 @@ async function flipCamera(){
     await openCam(camFacing);
     toast('这台设备只有一个镜头');
   }
-  syncCapTip();
 }
 
 /* =========================================================================
@@ -2618,15 +2610,6 @@ function tplReady(){
   return !!(tplSel && capTpl.complete && capTpl.naturalWidth);
 }
 
-/* 提示语跟着镜头走：不是自拍时先教用户切前置，否则脸根本对不进圈 */
-function syncCapTip(){
-  const el = document.getElementById('capTip');
-  if(!el) return;
-  el.textContent = (camFacing === 'user')
-    ? '把脸放进画面中间，身上直接出效果'
-    : '点右上角切前置，把脸放进画面中间';
-}
-
 /* 取脸窗口：固定在屏幕中间偏上那一块（自拍时脸大致就在这儿），
    预览贴片和成片都从这里取，所以看到什么就拍到什么。
    返回视频源坐标；自拍时源坐标要翻一次（画面上是镜像的）。 */
@@ -2675,22 +2658,6 @@ function paintFacePatch(){
   g.restore();
 }
 
-/* 成片的取景窗（屏幕 CSS 坐标）：4:5，竖向套住小人。
-   预览里的暗框和真正的裁切都用它，所以看到什么就拍到什么。 */
-function photoCrop(){
-  const ar = 1080 / 1350;
-  let sw = W, sh = H, ox = 0, oy = 0;
-  if(W / H < ar){
-    sh = W / ar;
-    const mid = capGeo ? (capGeo.y + capGeo.h * 0.5) : H * 0.5;
-    oy = clamp(mid - sh / 2, 0, Math.max(0, H - sh));
-  } else {
-    sw = H * ar;
-    ox = (W - sw) / 2;
-  }
-  return { sw, sh, ox, oy, ar };
-}
-
 /* 摆模板与脸贴片：
    模板只占取景区高度的 TPL_H（约半屏），四张图已归一到同一图高，所以人物一样大；
    脸贴片挂在模板脖子上，每帧由 paintFacePatch() 把实景里那块脸画进去。 */
@@ -2715,13 +2682,13 @@ function layoutCapScene(){
   const x = (r.width  - dw) / 2;
   const y = (r.height - dh) * 0.56;          // 略偏下，上面给提示语留空
 
-  /* 脸贴片：正方形，底边压在脖子底 */
+  /* 脸贴片：椭圆，底边压在脖子底 */
   const fb   = dh * HEAD_FB;
-  const rbox = fb * HEAD_R;
   const cx   = x + t.faceX * dw;             // 脖子中轴
   const botY = y + (t.faceY + (t.seat != null ? t.seat : HEAD_SEAT)) * dh;
+  const fh   = fb * FACE_RY;
   const boxL = cx - fb / 2;
-  const boxT = botY - fb;
+  const boxT = botY - fh;
 
   capTpl.style.left   = x + 'px';
   capTpl.style.top    = y + 'px';
@@ -2732,8 +2699,7 @@ function layoutCapScene(){
   faceCvEl.style.left   = boxL + 'px';
   faceCvEl.style.top    = boxT + 'px';
   faceCvEl.style.width  = fb + 'px';
-  faceCvEl.style.height = fb + 'px';
-  faceCvEl.style.setProperty('--rbox', rbox + 'px');
+  faceCvEl.style.height = fh + 'px';
   faceCvEl.style.display = 'block';
 
   // 画布像素按 DPR 放大，贴片放大后才不糊
@@ -2741,20 +2707,9 @@ function layoutCapScene(){
   const cw  = Math.max(2, Math.round(fb * dpr));
   if(faceCvEl.width !== cw){ faceCvEl.width = cw; faceCvEl.height = cw; }
 
-  // 存成视口坐标，拍照时直接乘缩放比
+  // 存成视口坐标（拍照时用不到，留给调试 / 之后的对齐提示）
   capGeo = { x: r.left + x, y: r.top + y, w: dw, h: dh,
-             bx: r.left + boxL, by: r.top + boxT,
-             fb, rbox };
-
-  /* 成片取景框：框外压暗，框内就是最终画面 */
-  const cr = photoCrop();
-  const fi = document.querySelector('#capFrame i');
-  if(fi){
-    fi.style.left   = (cr.ox - r.left) + 'px';
-    fi.style.top    = (cr.oy - r.top) + 'px';
-    fi.style.width  = cr.sw + 'px';
-    fi.style.height = cr.sh + 'px';
-  }
+             bx: r.left + boxL, by: r.top + boxT, fb };
 
   paintFacePatch();
 }
@@ -2841,7 +2796,6 @@ async function openCapture(){
   } else {
     await ensureCamBg();
   }
-  syncCapTip();
 }
 
 async function closeCapture(){
@@ -2858,101 +2812,91 @@ async function closeCapture(){
   }
 }
 
-/* 把整屏画面合成成一张图：实景铺底 → 模板人物贴上去 → 人脸圆盖在脖子上。
-   mirror = 自拍，整块按镜像画，拍出来才和取景时看到的一致。
-   返回 false 表示这一段暂时没有可用画面。 */
-function drawVideoCover(g, dx, dy, dw, dh, mirror){
-  const v = camEl;
-  if(!v || v.readyState < 2 || !v.videoWidth || !v.videoHeight) return false;
-  const vw = v.videoWidth, vh = v.videoHeight;
-  const sc = Math.max(dw / vw, dh / vh);
-  const sw = dw / sc, sh = dh / sc;
-  const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
-
-  g.save();
-  if(mirror){
-    g.translate(dx + dw, dy);
-    g.scale(-1, 1);
-    g.drawImage(v, sx, sy, sw, sh, 0, 0, dw, dh);
-  } else {
-    g.drawImage(v, sx, sy, sw, sh, dx, dy, dw, dh);
-  }
-  g.restore();
-  return true;
-}
-
 /* ---------- 人脸贴片 ---------- */
 
-/* 把取脸窗口那块实景，平面贴到模板的脖子上。
-   坐标一律用 CSS px，外层变换负责裁切 + 放大；shadow 是设备像素，得乘 k。 */
-function drawFaceFlat(g, k){
-  const G  = capGeo;
-  const fb = G.fb, rb = G.rbox, bx = G.bx, by = G.by;
-  const src = faceSrcRect();
+/* 在 (cx, botY) 贴一张椭圆形的人脸，宽度 fb。
+   坐标用调用方的坐标系（成片是输出像素）；不需要外层变换。
+   边缘用径向渐变羽化掉 —— 硬边会像贴了张证件照，柔一点才像长在脖子上。 */
+function drawFaceAt(g, cx, botY, fb){
+  const rx = fb / 2;
+  const ry = rx * FACE_RY;
+  const cy = botY - ry;
 
-  // 贴在身上的一点淡影，贴片才不像"挖了个洞"
+  const src = faceSrcRect();
+  if(!src){
+    // 还没有画面：给一块淡色椭圆占位
+    g.save();
+    g.fillStyle = '#D9CFC0';
+    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    g.restore();
+    return;
+  }
+
+  // 2) 脸先画进临时画布，再用径向渐变把四边削成半透明
+  const S = 512;
+  const tc = document.createElement('canvas');
+  tc.width = tc.height = S;
+  const tg = tc.getContext('2d');
+  if(camFacing === 'user'){ tg.translate(S, 0); tg.scale(-1, 1); }
+  tg.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, S, S);
+
+  tg.globalCompositeOperation = 'destination-in';
+  const rg = tg.createRadialGradient(S / 2, S / 2, S * 0.30, S / 2, S / 2, S * 0.50);
+  rg.addColorStop(0,    'rgba(0,0,0,1)');
+  rg.addColorStop(0.86, 'rgba(0,0,0,1)');
+  rg.addColorStop(1,    'rgba(0,0,0,0)');
+  tg.fillStyle = rg;
+  tg.fillRect(0, 0, S, S);
+
+  /* 3) 贴上：投影跟着这块羽化的 alpha 走。
+     不能先填一块实心椭圆当底再贴图 —— 羽化边会让那块底透出来，成为一圈浅色描边 */
   g.save();
   g.shadowColor   = 'rgba(20,16,14,.34)';
-  g.shadowBlur    = fb * 0.14 * k;
-  g.shadowOffsetY = fb * 0.045 * k;
-  roundRect(g, bx, by, fb, fb, rb);
-  g.fillStyle = '#D9CFC0';
-  g.fill();
-  g.restore();
-
-  if(!src) return;
-
-  g.save();
-  roundRect(g, bx, by, fb, fb, rb);
-  g.clip();
-  if(camFacing === 'user'){
-    // 取景里看到的是镜像画面，成片保持镜像，拍出来才和刚才看到的一致
-    g.translate(bx + fb, by);
-    g.scale(-1, 1);
-    g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, fb, fb);
-  } else {
-    g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, bx, by, fb, fb);
-  }
+  g.shadowBlur    = fb * 0.20;
+  g.shadowOffsetY = fb * 0.05;
+  g.drawImage(tc, cx - rx, cy - ry, rx * 2, ry * 2);
   g.restore();
 }
 
-/* 拍：从屏幕构图里裁一块 4:5 出来，取景窗竖向套住小人（小人半屏，它是构图中心），
-   模板 / 脸贴片的位置都照搬屏幕坐标，所以拍到的东西和取景时一模一样 */
+/* 拍：把「小人 + 你的脸」合成到一张米白底片上。
+   不再带实时背景 —— 拍完照还能看见自己身后的房间会很怪；
+   现在就是一张干净的合照卡：米白底 + 小人 + 椭圆脸。 */
 function shoot(){
   if(!capGeo) layoutCapScene();    // 刚换过模板图、还没摆位时补一次
 
   const OUT_W = 1080, OUT_H = 1350;
-  const ar = OUT_W / OUT_H;
-
-  // 和预览里的暗框同一个取景窗
-  const cr = photoCrop();
-  let sw = cr.sw, sh = cr.sh, ox = cr.ox, oy = cr.oy;
-  const k = OUT_W / sw;
-
   const cc = document.createElement('canvas');
   cc.width = OUT_W; cc.height = OUT_H;
   const g = cc.getContext('2d');
-  g.fillStyle = '#E7DFD4';
+
+  g.fillStyle = '#F5F0E7';          // 米白底
   g.fillRect(0, 0, OUT_W, OUT_H);
 
-  // 之后所有绘制都用屏幕 CSS 坐标，变换负责裁切 + 放大
-  g.save();
-  g.setTransform(k, 0, 0, k, -ox * k, -oy * k);
+  if(tplReady() && tplSel){
+    const t  = tplSel;
+    const ar = capTpl.naturalWidth / capTpl.naturalHeight;
 
-  drawVideoCover(g, 0, 0, W, H, camFacing === 'user');
+    // 人物占画面高度的 0.62；太宽（横躺的模板）就往回收
+    let dh = OUT_H * 0.62;
+    let dw = dh * ar;
+    const maxW = OUT_W * 0.86;
+    if(dw > maxW){ dw = maxW; dh = dw / ar; }
 
-  if(capGeo && tplReady()){
-    // 和预览时的 CSS drop-shadow 对得上，照片才不会跟屏幕差一截
+    const x = (OUT_W - dw) / 2;
+    const y = (OUT_H - dh) * 0.52;
+
     g.save();
-    g.shadowColor = 'rgba(20,16,14,.26)';
-    g.shadowBlur = 32 * k;
-    g.shadowOffsetY = 16 * k;
-    g.drawImage(capTpl, capGeo.x, capGeo.y, capGeo.w, capGeo.h);
+    g.shadowColor   = 'rgba(20,16,14,.20)';
+    g.shadowBlur    = 46;
+    g.shadowOffsetY = 20;
+    g.drawImage(capTpl, x, y, dw, dh);
     g.restore();
-    drawFaceFlat(g, k);
-  }
 
-  g.restore();
+    const fb   = dh * HEAD_FB;
+    const cx   = x + t.faceX * dw;
+    const botY = y + (t.faceY + (t.seat != null ? t.seat : HEAD_SEAT)) * dh;
+    drawFaceAt(g, cx, botY, fb);
+  }
 
   shotDataUrl = cc.toDataURL('image/jpeg', 0.92);
   shotImg.src = shotDataUrl;
