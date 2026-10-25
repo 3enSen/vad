@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#07120d" />
+    <title>学院精灵 AR</title>
+  </head>
+  <body>
+    <script>
+      if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
+        location.replace('./preview.html');
+      }
+    </script>
+    <main id="app">
+      <div id="ar-container" aria-label="AR 摄像头画面"></div>
+      <section class="panel" aria-live="polite">
+        <p id="status" class="status" data-state="idle"><span class="status-dot"></span><span id="status-text">准备中</span></p>
+        <p id="lost-hint" class="lost-hint" hidden>目标丢失，请重新对准学院标志</p>
+        <div class="actions">
+          <button id="start-button" type="button">启动 AR</button>
+          <button id="stop-button" class="secondary" type="button" hidden>停止 AR</button>
+        </div>
+      </section>
+      <button id="photo-button" class="photo-cta" type="button" hidden>去合影</button>
+      <details class="debug" hidden>
+        <summary>调试信息</summary>
+        <dl>
+          <div><dt>初始化</dt><dd id="debug-init">未启动</dd></div>
+          <div><dt>识别目标</dt><dd id="debug-target">否</dd></div>
+          <div><dt>角色可见</dt><dd id="debug-model">否</dd></div>
+          <div><dt>错误</dt><dd id="debug-error">无</dd></div>
+        </dl>
+      </details>
+    </main>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

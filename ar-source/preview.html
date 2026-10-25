@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#07120d" />
+    <title>识别成功 · 交互预览</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; margin: 0; }
+      body { overflow: hidden; color: #eef8f1; background: #07120d; font-family: system-ui, sans-serif; }
+      #preview { position: fixed; inset: 0; }
+      #preview canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+      .status { position: fixed; top: max(14px, env(safe-area-inset-top)); left: 50%; z-index: 5; transform: translateX(-50%); margin: 0; padding: 8px 14px; border: 1px solid #67f3a044; border-radius: 999px; background: #07120dc9; color: #dfffea; font-size: 13px; backdrop-filter: blur(10px); white-space: nowrap; }
+      .status::before { content: ''; display: inline-block; width: 8px; height: 8px; margin-right: 7px; border-radius: 50%; background: #32e879; box-shadow: 0 0 12px #32e879; }
+      .controls { position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom)); z-index: 5; display: grid; gap: 8px; width: min(88vw, 360px); transform: translateX(-50%); }
+      button { min-height: 48px; border: 1px solid #ffffff28; border-radius: 999px; color: #f3fff6; background: #173526e8; font: 700 16px/1 system-ui, sans-serif; backdrop-filter: blur(12px); }
+      #blow-test-button { min-height: 38px; color: #bfe8cb; background: #0c2118d9; font-size: 12px; font-weight: 500; }
+      #gesture-status { position: fixed; left: 50%; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 102px); z-index: 5; width: min(88vw, 420px); transform: translateX(-50%); color: #b8cabf; font-size: 11px; text-align: center; }
+    </style>
+  </head>
+  <body>
+    <main id="preview" aria-label="识别完成后的三只精灵交互预览"></main>
+    <p class="status">识别成功 · 预览模式</p>
+    <span id="gesture-status" aria-live="polite">可在角色上滑动测试摸头、转身和弹动</span>
+    <div class="controls">
+      <button id="photo-button" type="button">去合影</button>
+      <button id="blow-test-button" type="button">开启吹气互动</button>
+    </div>
+    <script type="module" src="./src/preview.js"></script>
+  </body>
+</html>
