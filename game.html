@@ -157,6 +157,38 @@
   }
   .btn.ghost:active{background:#FAF7F3}
   .btn[hidden]{display:none}
+  /* 继续探索：黑按钮，压在照片页最下面 */
+  .btn.dark{
+    background:#14110F;color:#fff;font-size:15px;
+    padding:14px 40px;box-shadow:0 12px 26px rgba(20,16,14,.30);
+  }
+  .btn.dark:active{background:#241F1B}
+
+  /* ---------- 探索：扫描页顶部说明 ---------- */
+  #scanTip{
+    max-width:min(560px,86vw);
+    margin:0 0 20px;
+    padding:11px 18px;border-radius:16px;
+    background:rgba(20,16,14,.46);
+    -webkit-backdrop-filter:blur(9px);backdrop-filter:blur(9px);
+    color:#fff;font-size:13px;line-height:1.75;letter-spacing:.02em;
+    text-align:center;position:relative;z-index:2;
+  }
+  #scanTip.hide{display:none}
+
+  /* 探索：扫描页左上角的返回（不然这条线进去就出不来） */
+  #exploreBack{
+    position:absolute;z-index:31;
+    left:14px;
+    top:calc(env(safe-area-inset-top,0px) + 14px);
+    padding:9px 18px;border-radius:99px;border:none;
+    background:rgba(20,16,14,.5);color:#fff;
+    font-family:inherit;font-size:13px;font-weight:600;letter-spacing:.04em;
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    cursor:pointer;display:none;
+  }
+  #exploreBack.show{display:block}
+  #exploreBack:active{background:rgba(20,16,14,.66)}
 
   /* ---------- 识别页（无白底，全屏实景 + 取景框） ---------- */
   #scanSheet{justify-content:center;gap:28px}
@@ -246,10 +278,46 @@
   /* ---------- 拍照 ---------- */
   /* 不再是"整块实景嵌进模板的洞里"，而是：全屏实景当背景，
      模板人物当一张透明贴纸站在画面下半部，人把自己脸对准脖子上的圆框 */
+  /* ---------- 拍照：两步 ----------
+     第一步"识脸"：纯白底 + 中间一个正圆取景圈（圆里就是待会儿贴到小人身上的那张脸）；
+     第二步"合照"：米白底（和成片同一个底色）+ 模板小人 + 脖子上的圆圈脸。 */
   #capture{
     justify-content:flex-start;
+    background:#fff;
     padding:calc(env(safe-area-inset-top,0px) + 12px) 0 calc(env(safe-area-inset-bottom,0px) + 20px);
   }
+  #capture[data-step="pose"]{background:#F5F0E7}
+  #capture[data-step="face"] #tplStrip,
+  #capture[data-step="face"] #capStage,
+  #capture[data-step="pose"] #faceScan,
+  #capture[data-step="pose"] #capFlip{display:none}
+
+  /* 识脸页 */
+  #faceScan{
+    flex:1 1 auto;min-height:0;width:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:16px;padding:0 24px;
+  }
+  #scanWrap{position:relative;flex:0 0 auto;display:grid;place-items:center}
+  /* 圆圈取景：圆里就是实景，圆外纯白 —— 一眼就懂"要把脸放进来" */
+  #scanCv{
+    display:block;width:76vw;height:76vw;
+    max-width:42vh;max-height:42vh;      /* 矮屏别把圆圈撑爆 */
+    border-radius:50%;background:#EFE8DE;
+    box-shadow:0 0 0 2px rgba(20,16,14,.10), 0 24px 56px rgba(20,16,14,.16);
+  }
+  /* 圈外再一道很淡的虚线，暗示"摆进来" */
+  #scanRing{
+    position:absolute;left:50%;top:50%;
+    width:calc(76vw + 24px);height:calc(76vw + 24px);
+    max-width:calc(42vh + 24px);max-height:calc(42vh + 24px);
+    transform:translate(-50%,-50%);
+    border-radius:50%;border:2px dashed rgba(20,16,14,.13);
+    pointer-events:none;
+  }
+  #scanTitle{font-size:16.5px;font-weight:800;color:var(--ink);letter-spacing:.02em}
+  #scanSub{font-size:11.5px;color:var(--ink3);letter-spacing:.04em;line-height:1.6}
+
   /* 已获得的合照模板：一行可点的缩略图 */
   #tplStrip{
     display:flex;gap:9px;width:100%;
@@ -323,6 +391,11 @@
   }
   #capFlip:active{transform:scale(.92)}
   #capFlip svg{width:20px;height:20px}
+  /* 识脸页是白底，深色圆钮太重，换成浅灰；位置抬到圆圈上方，不压虚线环 */
+  #capture[data-step="face"] #capFlip{
+    top:calc(env(safe-area-inset-top,0px) + 14px);
+    background:rgba(20,16,14,.055);color:var(--ink2);box-shadow:none;
+  }
   .capActions{
     display:flex;gap:12px;align-items:center;justify-content:center;
     margin-top:18px;width:100%;
@@ -330,6 +403,8 @@
   .capActions .btn{margin-top:0}
   #capBack{padding:15px 34px}
   #shootBtn{padding:15px 52px}
+  /* 识脸页还没出画面时，主按钮压暗一点，避免"按了没反应" */
+  #shootBtn.wait{opacity:.42;transition:opacity .2s}
 
   /* 拍照结果：一块暖白底 + 一张带白边的照片。
      这里不能再透明 —— 照片本身已经是米白底，页面再透出实景的话，
@@ -419,6 +494,8 @@
   <canvas id="three"></canvas>
   <canvas id="game"></canvas>
 
+  <button id="exploreBack" type="button">返回</button>
+
   <div id="hud">
     <div id="slots"></div>
     <div id="tip">拖动屏幕移动小精灵</div>
@@ -429,6 +506,8 @@
 
   <!-- 第一步：纯扫描（无白底，全屏实景 + 取景框） -->
   <div class="sheet clear" id="scanSheet">
+    <div id="scanTip" class="hide">vv aa dd 正在认真工作，<br>让我们来看看它们在干什么吧</div>
+
     <div id="scanFrame">
       <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
       <div id="scanLine"></div>
@@ -479,8 +558,18 @@
     <div id="resultHint">星星收集数量越多，合照伙伴越多哟</div>
   </div>
 
-  <!-- 拍照（整页透明：背景就是背后的摄像头实景） -->
-  <div class="sheet clear hide" id="capture">
+  <!-- 拍照：第一步识脸（白底 + 圆圈），第二步把圆圈脸贴到模板上 -->
+  <div class="sheet hide" id="capture" data-step="face">
+    <!-- 第一步：白底 + 中间一个正圆取景圈 -->
+    <div id="faceScan">
+      <div id="scanWrap">
+        <canvas id="scanCv"></canvas>
+        <div id="scanRing"></div>
+      </div>
+      <div id="scanTitle">把脸放进圆圈里</div>
+      <div id="scanSub">圈里这块会贴到小人身上</div>
+    </div>
+
     <div id="tplStrip"></div>
 
     <div id="capStage">
@@ -514,6 +603,7 @@
       <button class="btn ghost" id="retakeBtn" type="button">重新拍摄</button>
       <button class="btn" id="shotDone" type="button">完成</button>
     </div>
+    <button class="btn dark" id="exploreBtn" type="button">继续探索</button>
   </div>
 </div>
 
@@ -661,19 +751,22 @@ const TEMPLATES = [
   { stars:5, src:'templates/5.png', faceX:0.449, faceY:0.258, seat:0.148 },
 ];
 
-/* 人脸贴片 + 取景，全部相对模板图高 dh / 屏幕宽高：
-   TPL_H   模板人物高度 / 成片取景框高度（约半屏，别把画面塞满）
-   FB      脸贴片边长 / 模板图高（0.30：头大概和躯干同宽，像个小方盒扣在肩上）
-   SEAT    贴片底边在 faceY 之下再落多少 —— 四张图量下来脖子底边都在 faceY + 0.13 附近，
-           贴片压在这里，整截脖子被盖住，看着就是头接在身体上
-   CROP    取脸窗口边长 / 屏宽
-   CROPY   取脸窗口中心 / 屏高（自拍时脸大致在中间偏上） */
-const TPL_H     = 0.50;
-const HEAD_FB   = 0.300;
+/* 合照卡：预览和成片共用同一套公式，所以"看到什么就拍到什么"。
+   下面这些全是相对画框（4:5，成片 1080×1350）的比例：
+   TPL_H     人物高度 / 画框高度
+   TPL_MAXW  人物宽度上限 / 画框宽度（横躺的模板往回收，别顶边）
+   TPL_Y     人物竖直落点（0.52：略偏下，上面留白）
+   HEAD_FB   圆圈脸直径 / 画框宽度 —— 只跟画框走，跟模板图多高多宽无关，
+             五张模板上这张脸就一定是同一个大小
+   HEAD_SEAT 贴片底边在 faceY 之下再落多少（各模板自己的 seat 优先） */
+const OUT_W     = 1080;
+const OUT_H     = 1350;
+const TPL_H     = 0.62;
+const TPL_MAXW  = 0.86;
+const TPL_Y     = 0.52;
+const HEAD_FB   = 0.262;       // 圆圈脸直径 / 画框宽（原来按模板高算，五张差出 20%）
 const HEAD_SEAT = 0.136;
-const FACE_CROP = 0.62;
-const FACE_CROPY= 0.40;
-const FACE_RY   = 1.06;        // 椭圆脸竖向半径 / 横向半径（略高，像颗头）
+const FACE_RY   = 1.00;        // 取景圈是正圆，贴上去也必须是正圆，所见即所得
 
 /* 按星数取最高的那张模板 */
 function templateFor(stars){
@@ -707,6 +800,9 @@ const photoImg  = document.getElementById('photoImg');
 const photoPh   = document.getElementById('photoPh');
 const hintEl    = document.getElementById('resultHint');
 const capFlipBtn = document.getElementById('capFlip');
+const scanTipEl  = document.getElementById('scanTip');
+const exploreBtn = document.getElementById('exploreBtn');
+const exploreBackEl = document.getElementById('exploreBack');
 
 let W = 0, H = 0, S = 1, groundY = 0;
 
@@ -748,6 +844,7 @@ const SPRITE_ASPECT = 2995 / 2363;   // 三张角色图的统一宽高比
    ========================================================================= */
 const G = {
   state: 'scan',            // scan | intro | playing | over | capture
+  phase: 'play',            // play = 扫描三个图形进游戏；explore = 扫描水滴看它们在干什么
   char: 'v',
   t: 0,
   score: 0,
@@ -1146,8 +1243,13 @@ function initR3(){
   const side = new THREE.DirectionalLight(0xffffff, 0.80); side.position.set(-2.8, 0.7, 2.8); R3.scene.add(side);
   const rim  = new THREE.DirectionalLight(0xffffff, 1.20); rim.position.set(-0.6, 1.6, -4.0); R3.scene.add(rim);
 
+  /* world 只是用来整体倾斜：游戏时 rotation 恒为 0（等价于没有这层），
+     探索时把地面转成"从上往下看"的角度，人和地面一起转，关系不变 */
+  R3.world = new THREE.Group();
+  R3.scene.add(R3.world);
+
   R3.group = new THREE.Group();
-  R3.scene.add(R3.group);
+  R3.world.add(R3.group);
 
   R3.ok = true;
   updateR3Layout();
@@ -1273,10 +1375,12 @@ function syncR3(dt){
     if(!strong) setEyesVisible(k, true);
   });
 
-  // 只在游戏进行中登场（扫描页 / 选择页 / 拍照页都不显示）
-  const visible = (G.state === 'playing');
-  R3.group.visible = visible;
-  if(!visible){
+  /* 只有游戏里站着的那一幕需要 3D 形象；
+     扫描 / 选择 / 拍照 / 探索一律不显示 */
+  const playing = (G.state === 'playing');
+  R3.group.visible = playing;
+
+  if(!playing){
     R3.renderer.render(R3.scene, R3.camera);
     return;
   }
@@ -1997,10 +2101,13 @@ function render(){
   const needBg = (G.state === 'scan' || G.state === 'playing' || G.state === 'capture');
   if(needBg) drawCamBg();
 
-  /* 取景页：每帧把实景里那块脸贴到小人脖子上 —— 用户站在原地就能看到大致效果 */
-  if(G.state === 'capture') paintFacePatch();
+  /* 拍照页：识脸步骤画那个圆圈，合照步骤把定格的脸贴到小人脖子上 */
+  if(G.state === 'capture'){
+    if(capStep === 'face') paintScan();
+    else paintFacePatch();
+  }
 
-  // 识别 / 选择 / 拍照阶段只留实景，不画游戏元素
+  // 识别 / 选择 / 拍照：只留实景，不画游戏元素
   if(G.state === 'scan' || G.state === 'intro' || G.state === 'capture') return;
   ctx.save();
   if(G.shake > 0){
@@ -2063,11 +2170,13 @@ function grabFrame(){
   return true;
 }
 
-function analyzeMarker(){
+/* 把当前帧压成一张"暗块掩膜"：自适应阈值 + 面积粗筛。
+   三图形识别和水滴识别共用这一层，避免两套阈值各算各的。 */
+function buildDarkMask(){
   const S = SCAN_SIZE, total = S * S;
   const img = SCAN.ctx.getImageData(0, 0, S, S).data;
 
-  /* ---- 1. 亮度直方图，用自适应阈值代替写死的绝对黑度 ---- */
+  /* 亮度直方图，用自适应阈值代替写死的绝对黑度 */
   const lum  = new Uint8Array(total);
   const hist = new Uint32Array(256);
   for(let i = 0; i < total; i++){
@@ -2082,12 +2191,12 @@ function analyzeMarker(){
     for(let v = 0; v < 256; v++){ acc += hist[v]; if(acc >= need) return v; }
     return 255;
   };
-  const dark0 = quantile(0.015);     // 暗部参考
-  const bright = quantile(0.90);     // 亮部参考
+  const dark0  = quantile(0.015);     // 暗部参考
+  const bright = quantile(0.90);      // 亮部参考
   const contrast = bright - dark0;
 
   if(contrast < CONFIG.scanMinContrast){
-    return { ok:false, found:0, darkPct:0, contrast, th:0, why:'' };
+    return { ok:false, mask:null, darkPct:0, contrast, th:0 };
   }
 
   const th = clamp(
@@ -2103,8 +2212,17 @@ function analyzeMarker(){
 
   const darkPct = darkCount / total * 100;
   if(darkCount < CONFIG.scanMinCount || darkPct > CONFIG.scanMaxAreaPct){
-    return { ok:false, found:0, darkPct, contrast, th, why:'' };
+    return { ok:false, mask:null, darkPct, contrast, th };
   }
+  return { ok:true, mask, darkPct, contrast, th };
+}
+
+function analyzeMarker(){
+  const m = buildDarkMask();
+  if(!m.ok) return { ok:false, found:0, darkPct:m.darkPct, contrast:m.contrast, th:m.th, why:'' };
+
+  const S = SCAN_SIZE, total = S * S;
+  const mask = m.mask, darkPct = m.darkPct, contrast = m.contrast, th = m.th;
 
   /* ---- 2. 连通域，宽松几何筛 ---- */
   const visited = new Uint8Array(total);
@@ -2214,6 +2332,75 @@ function analyzeMarker(){
            why:'已看到 ' + need + ' 个图形' };
 }
 
+/* 水滴图形（上圆下尖）：探索阶段的入场券，认一个就够。
+   判据全放在"宽度剖面"上 —— 上段圆、中段最宽、下段收成一个尖。
+   圆形的底部还有 0.7 倍宽，三角形顶部只有 0.2 倍宽，两头都会被挡掉。 */
+function analyzeDrop(){
+  const m = buildDarkMask();
+  if(!m.ok) return { ok:false, found:0, need:1, darkPct:m.darkPct, contrast:m.contrast, th:m.th, why:'' };
+
+  const S = SCAN_SIZE, total = S * S, mask = m.mask;
+  const visited = new Uint8Array(total);
+  const stack   = new Int32Array(total);
+  let best = null;
+
+  for(let i = 0; i < total; i++){
+    if(!mask[i] || visited[i]) continue;
+
+    let sp = 0; stack[sp++] = i; visited[i] = 1;
+    let count = 0, minX = 1e9, maxX = -1, minY = 1e9, maxY = -1;
+    const pts = [];
+
+    while(sp > 0){
+      const p  = stack[--sp];
+      const px = p % S, py = (p - px) / S;
+      count++; pts.push(p);
+      if(px < minX) minX = px;
+      if(px > maxX) maxX = px;
+      if(py < minY) minY = py;
+      if(py > maxY) maxY = py;
+
+      if(px > 0){   const q = p - 1; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(px < S-1){ const q = p + 1; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(py > 0){   const q = p - S; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(py < S-1){ const q = p + S; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+    }
+
+    if(count < CONFIG.scanMinCount * 2) continue;
+
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    if(bw < CONFIG.scanMinSide || bh < CONFIG.scanMinSide) continue;
+    if(bw > S * 0.97 && bh > S * 0.97) continue;          // 挡住镜头
+
+    const ar   = bw / bh;
+    const fill = count / (bw * bh);
+    if(ar < 0.55 || ar > 1.15) continue;
+    if(fill < 0.45 || fill > 0.80) continue;
+
+    // 逐行像素数 → 宽度剖面
+    const rc = new Uint16Array(bh);
+    for(let k = 0; k < pts.length; k++){
+      const p  = pts[k];
+      const py = (p - (p % S)) / S;
+      rc[py - minY]++;
+    }
+    const at = t => rc[Math.min(bh - 1, Math.max(0, Math.round((bh - 1) * t)))];
+    const w10 = at(0.10), w50 = at(0.50), w85 = at(0.85);
+
+    if(w50 < bw * 0.70) continue;      // 中段要宽
+    if(w10 < w50 * 0.45) continue;     // 顶部是圆的，不是三角尖
+    if(w85 > w50 * 0.60) continue;     // 底部收成尖
+
+    if(!best || count > best.score) best = { score: count };
+  }
+
+  if(!best){
+    return { ok:false, found:0, need:1, darkPct:m.darkPct, contrast:m.contrast, th:m.th, why:'' };
+  }
+  return { ok:true, found:1, need:1, darkPct:m.darkPct, contrast:m.contrast, th:m.th,
+           why:'看到水滴图形' };
+}
+
 function updateScan(dt){
   if(!SCAN.running) return;
   SCAN.timer -= dt;
@@ -2224,35 +2411,43 @@ function updateScan(dt){
     scanDbg.textContent = '等待摄像头…';
     return;
   }
-  const r = analyzeMarker();
+  /* 探索阶段找"水滴"，游戏阶段找"三个图形"，两套判据各自独立 */
+  const exploring = (G.phase === 'explore');
+  const r    = exploring ? analyzeDrop() : analyzeMarker();
+  const need = exploring ? 2 : CONFIG.scanNeed;      // 水滴确认两拍就够
 
   if(r.ok){
     SCAN.hits++;
-    if(SCAN.hits >= CONFIG.scanNeed){
-      SCAN.hits = CONFIG.scanNeed;
-      onScanSuccess();
+    if(SCAN.hits >= need){
+      SCAN.hits = need;
+      if(exploring) onDropFound(); else onScanSuccess();
     }
   } else {
     SCAN.hits = Math.max(0, SCAN.hits - 1);
+    if(SCAN.hits === 0) dropSeen = false;      // 图形挪开了，下次再扫还能给反馈
   }
 
   const debugOn = /[?&]debug=1/.test(location.search || '');
-  const need = r.need || 3;
-  const seen = Math.min(r.found || 0, need);
+  const dbgNeed = r.need || 3;
+  const seen = Math.min(r.found || 0, dbgNeed);
 
   // 角标随识别进度变暖：不占版面，但能看出"快好了"
-  scanFrameEl.classList.toggle('warm', SCAN.hits > 0);
+  if(!dropSeen) scanFrameEl.classList.toggle('warm', SCAN.hits > 0);
 
   if(r.ok){
-    scanDbg.textContent = '识别到三个图形，马上开始';
+    scanDbg.textContent = exploring ? '看到它们了 · 正忙着呢' : '识别到三个图形，马上开始';
   } else if(debugOn){
-    scanDbg.textContent = '搜索中 · 看到 ' + seen + '/' + need
+    scanDbg.textContent = '搜索中 · 看到 ' + seen + '/' + dbgNeed
       + ' · 对比 ' + Math.round(r.contrast || 0) + ' · 阈值 ' + Math.round(r.th || 0)
       + ' · 暗 ' + r.darkPct.toFixed(0) + '%';
+  } else if(dropSeen){
+    scanDbg.textContent = '它们仨忙得不可开交';
   } else if(seen === 0){
-    scanDbg.textContent = '把墙上三个图形一起放进框内';
+    scanDbg.textContent = exploring ? '把那个图形放进框里看看'
+                                    : '把墙上三个图形一起放进框内';
   } else {
-    scanDbg.textContent = '已看到 ' + seen + '/' + need + ' · 再退后一点让三个都进框';
+    scanDbg.textContent = exploring ? '已看到 · 再凑近一点'
+                                    : '已看到 ' + seen + '/' + need + ' · 再退后一点让三个都进框';
   }
 }
 
@@ -2443,6 +2638,10 @@ function resetGame(){
 /* 启动后一进来就是识别页 */
 async function bootScan(){
   G.state = 'scan';
+  G.phase = 'play';
+  scanTipEl.classList.add('hide');
+  exploreBackEl.classList.remove('show');
+  dropSeen = false;
   scanEl.classList.remove('hide');
   introEl.classList.add('hide');
   resultEl.classList.add('hide');
@@ -2465,6 +2664,68 @@ async function bootScan(){
   camFailBtn.hidden = true;
   scanDbg.textContent = '';
   SCAN.running = true;
+}
+
+/* =========================================================================
+   探索线：照片页「继续探索」→ 扫水滴，停在这里
+   ========================================================================= */
+const wait = ms => new Promise(r => setTimeout(r, ms));
+let dropSeen = false;          // 已经扫到过水滴（闩住，免得一直闪）
+
+/* 从照片页进探索：回到扫描页，换成"找水滴"这套判据 */
+async function startExplore(){
+  ensureAudio();
+  shotEl.classList.add('hide');
+  capEl.classList.add('hide');
+  introEl.classList.add('hide');
+  resultEl.classList.add('hide');
+
+  G.phase = 'explore';
+  G.state = 'scan';
+  document.body.classList.remove('playing');
+
+  scanEl.classList.remove('hide');
+  scanTipEl.classList.remove('hide');
+  exploreBackEl.classList.add('show');
+  scanDbg.textContent = '';
+  SCAN.hits = 0;
+  dropSeen = false;
+  scanFrameEl.classList.remove('warm');
+
+  if(!camStream || camFacing !== 'environment'){
+    const ok = await openCam('environment');
+    if(!ok) scanDbg.textContent = '摄像头打不开（需要 https 或 localhost）';
+  } else {
+    await ensureCamBg();
+  }
+  SCAN.running = true;
+}
+
+/* 扫到水滴：只给一拍"看到了"的反馈，然后就停在这里。
+   这一版探索就停在扫描页 —— 不跳走、不出人，扫描框一直活着可以反复扫。
+   dropSeen 是个闩：水滴还留在框里时不反复闪，挪开一会儿才允许再触发。 */
+async function onDropFound(){
+  if(G.state !== 'scan' || !SCAN.running || dropSeen) return;
+  dropSeen = true;
+  SFX.lock();
+  scanFrameEl.classList.add('warm');
+  scanDbg.textContent = '看到它们了 · 正忙着呢';
+  await wait(1200);
+  if(G.state === 'scan') scanFrameEl.classList.remove('warm');
+}
+
+/* 左上角返回：回到照片页（那里还能再看照片、重新拍摄、再进来） */
+function exitExplore(){
+  exploreBackEl.classList.remove('show');
+  scanEl.classList.add('hide');
+  scanTipEl.classList.add('hide');
+  scanFrameEl.classList.remove('warm');
+  scanDbg.textContent = '';
+  SCAN.running = false;
+  SCAN.hits = 0;
+  dropSeen = false;
+  G.state = 'capture';              // 和刚出片时的状态一致：照片页盖在上面
+  shotEl.classList.remove('hide');
 }
 
 /* 扫描成功 → 挑选角色页 */
@@ -2588,11 +2849,18 @@ function gameOver(){
 const capStage = document.getElementById('capStage');
 const capTpl   = document.getElementById('capTemplate');
 const faceCvEl = document.getElementById('capFaceCv');
+const faceScanEl = document.getElementById('faceScan');
+const scanCv   = document.getElementById('scanCv');
 const tplStrip = document.getElementById('tplStrip');
 const shotImg  = document.getElementById('shotImg');
+const capBackBtn = document.getElementById('capBack');
+const shootBtnEl = document.getElementById('shootBtn');
 let shotDataUrl = '';
 let tplSel = null;                 // 当前选中的合照模板
-let capGeo = null;                 // 模板 & 人脸圆在视口里的位置（CSS px）
+let capGeo = null;                 // 模板 & 圆圈脸在视口里的位置（CSS px）
+let capStep = 'face';              // 'face' 识脸 → 'pose' 合照
+let faceShot = null;               // 拍下来的那张正方形脸（canvas），贴模板就用它
+let faceShotMirror = false;        // 拍的时候是不是前置（决定贴上去要不要翻）
 
 /* 模板图加载完再摆位置；缺图就把整层收掉，绝不留一个空框 */
 capTpl.addEventListener('load',  () => layoutCapScene());
@@ -2610,19 +2878,28 @@ function tplReady(){
   return !!(tplSel && capTpl.complete && capTpl.naturalWidth);
 }
 
-/* 取脸窗口：固定在屏幕中间偏上那一块（自拍时脸大致就在这儿），
-   预览贴片和成片都从这里取，所以看到什么就拍到什么。
-   返回视频源坐标；自拍时源坐标要翻一次（画面上是镜像的）。 */
-function faceSrcRect(){
+/* 取脸窗口：就是识脸页那个圆圈在屏幕上的位置（自拍时脸大致就在这儿）。
+   预览、拍照、贴模板全从这里取，所以看到什么就拍到什么。
+   返回视频源坐标；自拍时源坐标要翻一次（屏幕上看到的是镜像）。 */
+function scanRect(){
+  if(!scanCv) return null;
+  const r = scanCv.getBoundingClientRect();
+  if(r.width < 8) return null;
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, side: Math.min(r.width, r.height) };
+}
+
+function faceSrcRect(rect){
   const v = camEl;
   if(!v || v.readyState < 2 || !v.videoWidth) return null;
   const vw = v.videoWidth, vh = v.videoHeight;
   const sc = Math.max(W / vw, H / vh);            // 和 drawCamBg 同一套 cover 映射
   const offX = (W - vw * sc) / 2, offY = (H - vh * sc) / 2;
 
-  const side = W * FACE_CROP;
-  const ccx  = W * 0.5;
-  const ccy  = H * FACE_CROPY;
+  const R = rect || scanRect();
+  if(!R) return null;
+  const side = R.side;
+  const ccx  = R.cx;
+  const ccy  = R.cy;
 
   let sx = (ccx - side / 2 - offX) / sc;
   let sy = (ccy - side / 2 - offY) / sc;
@@ -2637,7 +2914,43 @@ function faceSrcRect(){
   return { v, kx, ky, kw, kh };
 }
 
-/* 取景区里那块脸贴片：每帧重画，用户站过去就能直接看到大致效果 */
+/* 当前该画哪块脸：拍过就用那张定格的正方形照片，没拍过就现取实景 */
+function faceFrame(){
+  if(faceShot){
+    return { img: faceShot, sx: 0, sy: 0, sw: faceShot.width, sh: faceShot.height, mirror: faceShotMirror };
+  }
+  const s = faceSrcRect();
+  if(!s) return null;
+  return { img: s.v, sx: s.kx, sy: s.ky, sw: s.kw, sh: s.kh, mirror: camFacing === 'user' };
+}
+
+/* 识脸页那个圆圈：每帧把圆圈位置对应的实景画进去 */
+function paintScan(){
+  const el = scanCv;
+  if(!el) return;
+  const cssW = el.clientWidth;
+  if(cssW < 8) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const px  = Math.max(2, Math.round(cssW * dpr));
+  if(el.width !== px){ el.width = px; el.height = px; }
+  const g = el.getContext('2d');
+  g.clearRect(0, 0, px, px);
+
+  const src = faceSrcRect();
+  if(!src){
+    g.fillStyle = '#EFE8DE';
+    g.fillRect(0, 0, px, px);
+    if(shootBtnEl) shootBtnEl.classList.add('wait');   // 没画面时按钮按下去也没意义
+    return;
+  }
+  if(shootBtnEl) shootBtnEl.classList.remove('wait');
+  g.save();
+  if(camFacing === 'user'){ g.translate(px, 0); g.scale(-1, 1); }
+  g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, px, px);
+  g.restore();
+}
+
+/* 合照页里脖子上那张圆圈脸：拍完就定格，不再跟着镜头动 */
 function paintFacePatch(){
   if(!capGeo) return;
   const el = faceCvEl;
@@ -2646,75 +2959,106 @@ function paintFacePatch(){
   const w = el.width, h = el.height;
   g.clearRect(0, 0, w, h);
 
-  const src = faceSrcRect();
-  if(!src){
-    g.fillStyle = 'rgba(120,110,100,.55)';
+  const f = faceFrame();
+  if(!f){
+    // 取不到画面（没授权 / 摄像头不可用）：留一块和页面同色的空位，别弄成一块深灰
+    g.fillStyle = '#E8DFD2';
     g.fillRect(0, 0, w, h);
     return;
   }
   g.save();
-  if(camFacing === 'user'){ g.translate(w, 0); g.scale(-1, 1); }
-  g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, w, h);
+  if(f.mirror){ g.translate(w, 0); g.scale(-1, 1); }
+  g.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, 0, 0, w, h);
   g.restore();
 }
 
-/* 摆模板与脸贴片：
-   模板只占取景区高度的 TPL_H（约半屏），四张图已归一到同一图高，所以人物一样大；
-   脸贴片挂在模板脖子上，每帧由 paintFacePatch() 把实景里那块脸画进去。 */
+/* 一张合照卡的构图：模板小人摆哪儿、圆圈脸摆哪儿。
+   预览和成片调同一个函数，只有画框尺寸不同 —— 比例完全一致，
+   而且圆圈脸的直径只跟画框宽度走，五张模板必定一样大。 */
+function capCompose(bw, bh){
+  if(!tplSel) return null;
+  const t = tplSel;
+  const ar = (capTpl.naturalWidth || 1) / (capTpl.naturalHeight || 1);
+
+  let dh = bh * TPL_H;
+  let dw = dh * ar;
+  if(dw > bw * TPL_MAXW){ dw = bw * TPL_MAXW; dh = dw / ar; }
+
+  const x = (bw - dw) / 2;
+  const y = (bh - dh) * TPL_Y;
+
+  const fd   = bw * HEAD_FB;                       // 圆圈脸直径
+  const cx   = x + t.faceX * dw;                   // 脖子中轴
+  const botY = y + (t.faceY + (t.seat != null ? t.seat : HEAD_SEAT)) * dh;
+  const cy   = botY - fd * FACE_RY / 2;            // 圆心：底边压在脖子底
+
+  return { x, y, dw, dh, fd, cx, cy, botY };
+}
+
+/* 摆模板与圆圈脸：画框严格按成片的 4:5 放在取景区正中，
+   所以手机上看到的构图 = 拍出来那张照片的构图。 */
 function layoutCapScene(){
   const r = capStage.getBoundingClientRect();
-  if(!tplReady() || r.width < 20 || r.height < 20){
+  if(capStep !== 'pose' || !tplReady() || r.width < 20 || r.height < 20){
     capGeo = null;
     capTpl.style.display = 'none';
     faceCvEl.style.display = 'none';
     return;
   }
 
-  const t  = tplSel;
-  const ar = capTpl.naturalWidth / capTpl.naturalHeight;
-  // 模板高度按"成片取景框"来定：小人大概占画面一半，不把整屏塞满
-  const cropH = Math.min(r.width * 1350 / 1080, r.height);
-  let dh = cropH * TPL_H;
-  let dw = dh * ar;
-  const maxW = r.width * 0.94;              // 两侧留边，幽灵不贴屏幕边
-  if(dw > maxW){ dw = maxW; dh = dw / ar; }
+  // 4:5 画框，塞进取景区正中
+  const bw = Math.min(r.width, r.height * OUT_W / OUT_H);
+  const bh = bw * OUT_H / OUT_W;
+  const bx = (r.width  - bw) / 2;
+  const by = (r.height - bh) / 2;
 
-  const x = (r.width  - dw) / 2;
-  const y = (r.height - dh) * 0.56;          // 略偏下，上面给提示语留空
+  const c = capCompose(bw, bh);
+  if(!c) return;
 
-  /* 脸贴片：椭圆，底边压在脖子底 */
-  const fb   = dh * HEAD_FB;
-  const cx   = x + t.faceX * dw;             // 脖子中轴
-  const botY = y + (t.faceY + (t.seat != null ? t.seat : HEAD_SEAT)) * dh;
-  const fh   = fb * FACE_RY;
-  const boxL = cx - fb / 2;
-  const boxT = botY - fh;
-
-  capTpl.style.left   = x + 'px';
-  capTpl.style.top    = y + 'px';
-  capTpl.style.width  = dw + 'px';
-  capTpl.style.height = dh + 'px';
+  const left = bx + c.x, top = by + c.y;
+  capTpl.style.left   = left + 'px';
+  capTpl.style.top    = top + 'px';
+  capTpl.style.width  = c.dw + 'px';
+  capTpl.style.height = c.dh + 'px';
   capTpl.style.display = 'block';
+
+  const fh   = c.fd * FACE_RY;
+  const boxL = bx + c.cx - c.fd / 2;
+  const boxT = by + c.cy - fh / 2;
 
   faceCvEl.style.left   = boxL + 'px';
   faceCvEl.style.top    = boxT + 'px';
-  faceCvEl.style.width  = fb + 'px';
+  faceCvEl.style.width  = c.fd + 'px';
   faceCvEl.style.height = fh + 'px';
   faceCvEl.style.display = 'block';
 
   // 画布像素按 DPR 放大，贴片放大后才不糊
   const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw  = Math.max(2, Math.round(fb * dpr));
-  if(faceCvEl.width !== cw){ faceCvEl.width = cw; faceCvEl.height = cw; }
+  const cw  = Math.max(2, Math.round(c.fd * dpr));
+  const ch  = Math.max(2, Math.round(fh * dpr));
+  if(faceCvEl.width !== cw || faceCvEl.height !== ch){ faceCvEl.width = cw; faceCvEl.height = ch; }
 
-  // 存成视口坐标（拍照时用不到，留给调试 / 之后的对齐提示）
-  capGeo = { x: r.left + x, y: r.top + y, w: dw, h: dh,
-             bx: r.left + boxL, by: r.top + boxT, fb };
+  // 存成视口坐标（留给调试 / 之后的对齐提示）
+  capGeo = { x: r.left + left, y: r.top + top, w: c.dw, h: c.dh,
+             bw, bh, bx: r.left + bx, by: r.top + by,
+             fx: r.left + boxL, fy: r.top + boxT, fd: c.fd };
 
   paintFacePatch();
 }
 
-onResizeCapture = () => { if(G.state === 'capture') layoutCapScene(); };
+onResizeCapture = () => {
+  if(G.state !== 'capture') return;
+  if(capStep === 'pose') layoutCapScene();
+  else if(scanCv) paintScan();
+};
+
+/* 只刷新缩略图的选中态（切步骤时用，不重新加载图片） */
+function buildStripSel(){
+  const cur = tplSel ? String(tplSel.stars) : '';
+  Array.prototype.forEach.call(tplStrip.children, c => {
+    c.classList.toggle('sel', c.dataset.stars === cur);
+  });
+}
 
 /* 选中某张模板 */
 function selectTemplate(t){
@@ -2727,10 +3071,7 @@ function selectTemplate(t){
     capTpl.removeAttribute('src');
   }
   layoutCapScene();
-  const cur = tplSel ? String(tplSel.stars) : '';
-  Array.prototype.forEach.call(tplStrip.children, c => {
-    c.classList.toggle('sel', c.dataset.stars === cur);
-  });
+  buildStripSel();
 }
 
 /* 上方一行：本次游戏里拿过的模板都留着，随时可以点回来换一张拍。
@@ -2775,6 +3116,41 @@ function buildTemplateStrip(){
   selectTemplate(pick);
 }
 
+/* 切换拍照页的两步：face = 白底识脸，pose = 米白底合照 */
+function setCapStep(step){
+  capStep = step === 'pose' ? 'pose' : 'face';
+  capEl.dataset.step = capStep;
+
+  const pose = capStep === 'pose';
+  capBackBtn.textContent = pose ? '重拍' : '返回';
+  shootBtnEl.textContent = pose ? '完成' : '拍照';
+  shootBtnEl.classList.remove('wait');
+
+  if(pose){
+    buildStripSel();
+    requestAnimationFrame(() => layoutCapScene());
+  } else {
+    layoutCapScene();                 // 非 pose 会顺手把模板层收掉
+    requestAnimationFrame(() => paintScan());
+  }
+}
+
+/* 把圆圈里那一帧定格成一张正方形照片 —— 之后贴模板就用它 */
+function captureFace(){
+  const src = faceSrcRect();
+  if(!src){ faceShot = null; faceShotMirror = false; return false; }
+
+  const SQ = 640;
+  const c = document.createElement('canvas');
+  c.width = c.height = SQ;
+  const g = c.getContext('2d');
+  g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, SQ, SQ);
+
+  faceShot = c;
+  faceShotMirror = (camFacing === 'user');
+  return true;
+}
+
 async function openCapture(){
   ensureAudio();
   G.state = 'capture';
@@ -2782,9 +3158,11 @@ async function openCapture(){
   shotEl.classList.add('hide');
   capEl.classList.remove('hide');
   document.body.classList.add('capturing');
+  faceShot = null;                    // 每次进来都重新认一次脸
+  faceShotMirror = false;
 
   buildTemplateStrip();
-  requestAnimationFrame(() => layoutCapScene());   // 等 flex 布局稳定后再摆一次
+  setCapStep('face');
 
   /* 合照要的是自己的脸。游戏里用后摄看环境，进拍照页第一次自动换到前置；
      用户自己翻过镜头（camTouched）就不再擅自切回去。 */
@@ -2796,11 +3174,15 @@ async function openCapture(){
   } else {
     await ensureCamBg();
   }
+  requestAnimationFrame(() => paintScan());
 }
 
 async function closeCapture(){
   capEl.classList.add('hide');
   shotEl.classList.add('hide');
+  exploreBackEl.classList.remove('show');
+  G.phase = 'play';                 // 从探索线退出来，别把"找水滴"的判据带回去
+  dropSeen = false;
   document.body.classList.remove('capturing');
   resultEl.classList.remove('hide');
   G.state = 'over';
@@ -2814,16 +3196,15 @@ async function closeCapture(){
 
 /* ---------- 人脸贴片 ---------- */
 
-/* 在 (cx, botY) 贴一张椭圆形的人脸，宽度 fb。
+/* 在 (cx, cy) 以直径 fd 贴一张正圆的人脸。
    坐标用调用方的坐标系（成片是输出像素）；不需要外层变换。
    边缘用径向渐变羽化掉 —— 硬边会像贴了张证件照，柔一点才像长在脖子上。 */
-function drawFaceAt(g, cx, botY, fb){
-  const rx = fb / 2;
+function drawFaceAt(g, cx, cy, fd){
+  const rx = fd / 2;
   const ry = rx * FACE_RY;
-  const cy = botY - ry;
 
-  const src = faceSrcRect();
-  if(!src){
+  const f = faceFrame();
+  if(!f){
     // 还没有画面：给一块淡色椭圆占位
     g.save();
     g.fillStyle = '#D9CFC0';
@@ -2833,38 +3214,38 @@ function drawFaceAt(g, cx, botY, fb){
   }
 
   // 2) 脸先画进临时画布，再用径向渐变把四边削成半透明
-  const S = 512;
+  const SQ = 512;
   const tc = document.createElement('canvas');
-  tc.width = tc.height = S;
+  tc.width = tc.height = SQ;
   const tg = tc.getContext('2d');
-  if(camFacing === 'user'){ tg.translate(S, 0); tg.scale(-1, 1); }
-  tg.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, S, S);
+  if(f.mirror){ tg.translate(SQ, 0); tg.scale(-1, 1); }
+  tg.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, 0, 0, SQ, SQ);
 
   tg.globalCompositeOperation = 'destination-in';
-  const rg = tg.createRadialGradient(S / 2, S / 2, S * 0.30, S / 2, S / 2, S * 0.50);
+  const rg = tg.createRadialGradient(SQ / 2, SQ / 2, SQ * 0.30, SQ / 2, SQ / 2, SQ * 0.50);
   rg.addColorStop(0,    'rgba(0,0,0,1)');
-  rg.addColorStop(0.86, 'rgba(0,0,0,1)');
+  rg.addColorStop(0.92, 'rgba(0,0,0,1)');   // 羽化只吃最后一圈：太宽的软边会透出身后的东西
   rg.addColorStop(1,    'rgba(0,0,0,0)');
   tg.fillStyle = rg;
-  tg.fillRect(0, 0, S, S);
+  tg.fillRect(0, 0, SQ, SQ);
 
   /* 3) 贴上：投影跟着这块羽化的 alpha 走。
-     不能先填一块实心椭圆当底再贴图 —— 羽化边会让那块底透出来，成为一圈浅色描边 */
+     不能先填一块实心圆当底再贴图 —— 羽化边会让那块底透出来，成为一圈浅色描边 */
   g.save();
-  g.shadowColor   = 'rgba(20,16,14,.34)';
-  g.shadowBlur    = fb * 0.20;
-  g.shadowOffsetY = fb * 0.05;
+  g.shadowColor   = 'rgba(20,16,14,.28)';
+  g.shadowBlur    = fd * 0.13;
+  g.shadowOffsetY = fd * 0.035;
   g.drawImage(tc, cx - rx, cy - ry, rx * 2, ry * 2);
   g.restore();
 }
 
-/* 拍：把「小人 + 你的脸」合成到一张米白底片上。
-   不再带实时背景 —— 拍完照还能看见自己身后的房间会很怪；
-   现在就是一张干净的合照卡：米白底 + 小人 + 椭圆脸。 */
+/* 合影出片：米白底 + 小人 + 脖子上的圆圈脸。
+   构图直接调 capCompose()，和屏幕上那份预览共用一套公式，不会有对不上的情况。 */
 function shoot(){
-  if(!capGeo) layoutCapScene();    // 刚换过模板图、还没摆位时补一次
+  if(!tplReady() || !tplSel) return;
+  const c = capCompose(OUT_W, OUT_H);
+  if(!c) return;
 
-  const OUT_W = 1080, OUT_H = 1350;
   const cc = document.createElement('canvas');
   cc.width = OUT_W; cc.height = OUT_H;
   const g = cc.getContext('2d');
@@ -2872,46 +3253,44 @@ function shoot(){
   g.fillStyle = '#F5F0E7';          // 米白底
   g.fillRect(0, 0, OUT_W, OUT_H);
 
-  if(tplReady() && tplSel){
-    const t  = tplSel;
-    const ar = capTpl.naturalWidth / capTpl.naturalHeight;
+  g.save();
+  g.shadowColor   = 'rgba(20,16,14,.20)';
+  g.shadowBlur    = 46;
+  g.shadowOffsetY = 20;
+  g.drawImage(capTpl, c.x, c.y, c.dw, c.dh);
+  g.restore();
 
-    // 人物占画面高度的 0.62；太宽（横躺的模板）就往回收
-    let dh = OUT_H * 0.62;
-    let dw = dh * ar;
-    const maxW = OUT_W * 0.86;
-    if(dw > maxW){ dw = maxW; dh = dw / ar; }
-
-    const x = (OUT_W - dw) / 2;
-    const y = (OUT_H - dh) * 0.52;
-
-    g.save();
-    g.shadowColor   = 'rgba(20,16,14,.20)';
-    g.shadowBlur    = 46;
-    g.shadowOffsetY = 20;
-    g.drawImage(capTpl, x, y, dw, dh);
-    g.restore();
-
-    const fb   = dh * HEAD_FB;
-    const cx   = x + t.faceX * dw;
-    const botY = y + (t.faceY + (t.seat != null ? t.seat : HEAD_SEAT)) * dh;
-    drawFaceAt(g, cx, botY, fb);
-  }
+  drawFaceAt(g, c.cx, c.cy, c.fd);
 
   shotDataUrl = cc.toDataURL('image/jpeg', 0.92);
   shotImg.src = shotDataUrl;
 
   SFX.shutter();
-  capEl.classList.add('hide');      // 取景页先收掉，结果页才是干净的透明底
+  capEl.classList.add('hide');      // 取景页先收掉，结果页才是干净的底色
   shotEl.classList.remove('hide');
 }
 
-/* 重新拍摄：结果页收掉、取景页放回来（实景一直开着，不用重开摄像头） */
+/* 底部那颗主按钮：识脸这一步是"拍照"，合照这一步是"完成" */
+function onShootTap(){
+  ensureAudio();
+  if(capStep === 'face'){
+    if(!captureFace() && camStream){
+      // 摄像头在预热，等有画面再拍，否则贴上去是一块灰
+      toast('摄像头还没出画面，稍等一下');
+      return;
+    }
+    setCapStep('pose');
+  } else {
+    shoot();
+  }
+}
+
+/* 重新拍摄：结果页收掉、回到合照页（脸还在，可以换模板再拍；想换脸点"重拍"） */
 function retake(){
   ensureAudio();
   shotEl.classList.add('hide');
   capEl.classList.remove('hide');
-  layoutCapScene();                 // 回来之后按当前尺寸重摆一次
+  setCapStep(faceShot ? 'pose' : 'face');
   if(!camStream) openCam(camFacing); else ensureCamBg();
 }
 
@@ -2986,10 +3365,16 @@ document.getElementById('startBtn').addEventListener('click', () => { prepareAnd
 document.getElementById('againBtn').addEventListener('click', () => { prepareAndPlay(); });
 document.getElementById('changeBtn').addEventListener('click', () => { ensureAudio(); showIntro(); });
 document.getElementById('shotBtn').addEventListener('click', () => { openCapture(); });
-document.getElementById('capBack').addEventListener('click', () => { closeCapture(); });
-document.getElementById('shootBtn').addEventListener('click', () => { shoot(); });
+document.getElementById('capBack').addEventListener('click', () => {
+  /* 合照这一步先退回识脸，识脸这一步才是真的退出拍照 */
+  if(capStep === 'pose'){ faceShot = null; setCapStep('face'); }
+  else closeCapture();
+});
+document.getElementById('shootBtn').addEventListener('click', () => { onShootTap(); });
 document.getElementById('retakeBtn').addEventListener('click', () => { retake(); });
 document.getElementById('shotDone').addEventListener('click', () => { closeCapture(); });
+document.getElementById('exploreBtn').addEventListener('click', () => { startExplore(); });
+document.getElementById('exploreBack').addEventListener('click', () => { ensureAudio(); exitExplore(); });
 capFlipBtn.addEventListener('click', () => { ensureAudio(); flipCamera(); });
 camFailBtn.addEventListener('click', () => { enterGame(); });
 
@@ -3023,8 +3408,8 @@ buildSlots();
 G.sprite.x = W/2;
 G.sprite.tx = W/2;
 requestAnimationFrame(loop);
-/* 从主 AR 流程进入时，识别已经完成，直接进入角色选择和小游戏。
-   单独打开本页时仍保留原有扫描入口，方便独立调试。 */
+/* 从 MindAR 首页识别成功后进入时，不再重复扫描识别物，
+   直接进入队友最新版的角色选择、小游戏与合照流程。 */
 const fromAR = new URLSearchParams(location.search).get('from') === 'ar';
 if(fromAR) showIntro();
 else bootScan();
@@ -3039,9 +3424,14 @@ loadThreeScript().then(ok => {
 window.__GAME = { G, CONFIG, CHARS, TEMPLATES, SCAN, ANIM, R3, modelCache,
                   enterGame, prepareAndPlay, showIntro, analyzeMarker, bootScan,
                   openCapture, shoot, closeCapture, retake, flipCamera, gameOver,
+                  startExplore, onDropFound, exitExplore, analyzeDrop, analyzeMarker,
                   selectTemplate, templateFor, scanSuccess: onScanSuccess,
                   onCatch, onBomb, showFace, setEyesVisible, drawCamBg,
+                  setCapStep, captureFace, onShootTap, capCompose, paintScan, paintFacePatch,
                   get tplSel(){ return tplSel; },
+                  get capStep(){ return capStep; },
+                  get capGeo(){ return capGeo; },
+                  get faceShot(){ return faceShot; },
                   get camFacing(){ return camFacing; } };
 })();
 </script>
