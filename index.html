@@ -1,40 +1,3635 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#07120d" />
-    <title>学院精灵 AR</title>
-    <script type="module" crossorigin src="./assets/index-iJBhLKlQ.js"></script>
-    <link rel="modulepreload" crossorigin href="./assets/blow-DWcyEuEB.js">
-    <link rel="stylesheet" crossorigin href="./assets/index-DGDNnpHM.css">
-  </head>
-  <body>
-    <script>
-      if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') {
-        location.replace('./preview.html');
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF">
+<link rel="icon" href="data:,">
+<title>接住星星 · AR 互动</title>
+<style>
+  :root{
+    --ink:#14100E;
+    --ink2:#5A524C;
+    --ink3:#9C938A;
+    --line:#EBE5DE;
+    --paper:#FFFFFF;
+    --accent:#FF7A45;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{
+    height:100%;overflow:hidden;background:#fff;color:var(--ink);
+    font-family:system-ui,-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+    user-select:none;-webkit-user-select:none;
+    -webkit-font-smoothing:antialiased;
+  }
+  #stage{position:fixed;inset:0;overflow:hidden;background:#F5F1EC}
+
+  /* ---------- 背景 / 摄像头 ---------- */
+  /* 摄像头不可用时的兜底背景：原来是接近纯白，视觉上像"白色底图"，改成暖米色 */
+  #fallback{
+    position:absolute;inset:0;
+    background:radial-gradient(120% 80% at 50% 0%, #F7F1E8 0%, #EEE5D9 56%, #E3D8C8 100%);
+  }
+  #fallback::after{
+    content:'';position:absolute;inset:0;
+    background-image:radial-gradient(rgba(20,16,14,.055) 1px, transparent 1px);
+    background-size:26px 26px;
+  }
+  #cam{
+    position:absolute;inset:0;width:100%;height:100%;
+    min-width:100%;min-height:100%;
+    object-fit:cover;object-position:center;
+    display:none;z-index:1;
+  }
+  /* 上下白雾只给扫描页用；游戏界面要求背景全透，playing 时直接关掉。
+     z-index 要压在画布（实景现在画在 #game 上）之上，否则扫描页的文字没有承托 */
+  #camMask{
+    position:absolute;inset:0;display:none;pointer-events:none;z-index:6;
+    background:linear-gradient(180deg, rgba(255,255,255,.40) 0%, rgba(255,255,255,0) 22%,
+                                        rgba(255,255,255,0) 72%, rgba(255,255,255,.20) 100%);
+  }
+  body.cam-on #cam,body.cam-on #camMask{display:block}
+  body.cam-on.playing #camMask{display:none}
+  /* 拍照页要求整页全透明，白雾也一并关掉 */
+  body.cam-on.capturing #camMask{display:none}
+  body.cam-on #fallback{display:none}
+
+  /* 3D 形象层（必须在 2D 画布之上：地面阴影/暖光画在 2D 上，压在模型身上会变成一道横线） */
+  canvas#three{
+    position:absolute;inset:0;width:100%;height:100%;
+    pointer-events:none;z-index:5;display:block;
+  }
+  canvas#game{
+    position:absolute;inset:0;width:100%;height:100%;
+    touch-action:none;z-index:4;display:block;
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:absolute;left:0;right:0;top:0;
+    padding:calc(env(safe-area-inset-top,0px) + 14px) 16px 0;
+    display:flex;flex-direction:column;align-items:center;gap:9px;
+    pointer-events:none;z-index:6;
+    opacity:0;transition:opacity .35s ease;
+  }
+  body.playing #hud{opacity:1}
+  #slots{
+    display:flex;gap:7px;padding:7px 10px;border-radius:99px;
+    background:rgba(255,255,255,.88);
+    box-shadow:0 6px 18px rgba(20,16,14,.10);
+  }
+  .slot{
+    width:24px;height:24px;border-radius:8px;
+    background:rgba(20,16,14,.05);
+    display:grid;place-items:center;
+    transition:transform .28s cubic-bezier(.34,1.56,.64,1), background .2s;
+  }
+  .slot svg{width:15px;height:15px}
+  .slot svg path{fill:#D9D2CA;transition:fill .2s}
+  .slot.on{background:rgba(255,176,32,.16);transform:scale(1.14)}
+  .slot.on svg path{fill:#FFAE18}
+  #tip{
+    font-size:12.5px;letter-spacing:.05em;color:var(--ink2);
+    padding:5px 13px;border-radius:99px;background:rgba(255,255,255,.88);
+    box-shadow:0 4px 14px rgba(20,16,14,.08);
+  }
+
+  /* ---------- 覆盖页 ---------- */
+  .sheet{
+    position:absolute;inset:0;z-index:20;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:calc(env(safe-area-inset-top,0px) + 20px) 24px calc(env(safe-area-inset-bottom,0px) + 20px);
+    text-align:center;
+    transition:opacity .3s ease, visibility .3s;
+  }
+  .sheet.light{background:#fff}
+  .sheet.clear{background:transparent}
+  /* 彻底移出渲染树：只靠 opacity/visibility 隐藏时，部分移动端浏览器会残留子元素合成层，
+     拍照页的取景框会以"中间一块"的形式留在游戏画面上 */
+  .sheet.hide{opacity:0;visibility:hidden;pointer-events:none;display:none}
+
+  .eyebrow{
+    font-size:11px;letter-spacing:.30em;text-transform:uppercase;
+    color:var(--ink3);margin-bottom:14px;
+  }
+  h1{font-size:clamp(26px,7vmin,38px);font-weight:800;letter-spacing:.02em;line-height:1.2}
+  h1 em{font-style:normal;color:var(--accent)}
+  .sub{
+    margin-top:10px;font-size:13.5px;line-height:1.8;
+    color:var(--ink2);max-width:300px;
+  }
+
+  /* 形象选择 */
+  #pickers{display:flex;gap:12px;margin:22px 0 0}
+  .pick{
+    width:82px;height:96px;border-radius:22px;
+    border:2px solid var(--line);background:#fff;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+    cursor:pointer;transition:all .22s cubic-bezier(.34,1.56,.64,1);
+    font-family:inherit;
+  }
+  .pick img{width:60px;height:44px;object-fit:contain;display:block}
+  .pick span{
+    font-size:12px;font-weight:800;letter-spacing:.10em;
+    color:var(--ink3);line-height:1;transition:color .2s;
+  }
+  .pick.sel{
+    border-color:var(--ink);
+    transform:translateY(-4px);
+    box-shadow:0 12px 24px rgba(20,16,14,.12);
+  }
+  .pick.sel span{color:var(--ink)}
+
+  .btn{
+    margin-top:18px;
+    padding:15px 46px;border:none;border-radius:99px;
+    font-size:16px;font-weight:700;letter-spacing:.05em;
+    color:#fff;cursor:pointer;font-family:inherit;text-decoration:none;
+    display:inline-flex;align-items:center;justify-content:center;
+    background:linear-gradient(160deg,#FF9159,#FF6B35);
+    box-shadow:0 10px 24px rgba(240,97,31,.28);
+    transition:transform .16s ease;
+  }
+  .btn:active{transform:scale(.97)}
+  .btn.ghost{
+    background:#fff;color:var(--ink);font-weight:600;font-size:14.5px;
+    border:1.5px solid var(--line);box-shadow:none;padding:13px 34px;
+  }
+  .btn.ghost:active{background:#FAF7F3}
+  .btn[hidden]{display:none}
+  /* 继续探索：黑按钮，压在照片页最下面 */
+  .btn.dark{
+    background:#14110F;color:#fff;font-size:15px;
+    padding:14px 40px;box-shadow:0 12px 26px rgba(20,16,14,.30);
+  }
+  .btn.dark:active{background:#241F1B}
+
+  /* ---------- 探索：扫描页顶部说明 ---------- */
+  #scanTip{
+    max-width:min(560px,86vw);
+    margin:0 0 20px;
+    padding:11px 18px;border-radius:16px;
+    background:rgba(20,16,14,.46);
+    -webkit-backdrop-filter:blur(9px);backdrop-filter:blur(9px);
+    color:#fff;font-size:13px;line-height:1.75;letter-spacing:.02em;
+    text-align:center;position:relative;z-index:2;
+  }
+  #scanTip.hide{display:none}
+
+  /* ---------- 探索：寻找平面 ---------- */
+  #planeHunt{
+    position:absolute;inset:0;z-index:30;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;
+    background:rgba(12,10,9,.52);
+    -webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+    transition:opacity .3s ease;
+  }
+  #planeHunt.hide{opacity:0;visibility:hidden;pointer-events:none;display:none}
+  #planeHunt .ph{
+    display:flex;flex-direction:column;align-items:center;gap:18px;
+    color:#fff;text-align:center;
+  }
+  #planeHunt .phTitle{
+    font-size:15px;font-weight:700;letter-spacing:.06em;
+    padding:8px 20px;border-radius:99px;background:rgba(20,16,14,.5);
+  }
+  /* 一圈会转的虚线环：找平面时的"雷达" */
+  #planeHunt .ring{
+    width:132px;height:132px;border-radius:50%;
+    border:2px dashed rgba(255,255,255,.5);
+    position:relative;animation:planeSpin 3.4s linear infinite;
+  }
+  #planeHunt .ring::before,
+  #planeHunt .ring::after{
+    content:'';position:absolute;inset:14px;border-radius:50%;
+    border:1.5px solid rgba(255,209,102,.0);
+  }
+  #planeHunt .ring::after{inset:30px;animation:planePulse 1.6s ease-out infinite}
+  @keyframes planeSpin{to{transform:rotate(360deg)}}
+  @keyframes planePulse{
+    0%{border-color:rgba(255,209,102,.75);inset:44px}
+    100%{border-color:rgba(255,209,102,0);inset:2px}
+  }
+  #planeHunt .phHint{font-size:12.5px;color:rgba(255,255,255,.72);letter-spacing:.04em}
+  /* 找到之后换成对钩 */
+  #planeHunt.lock .ring{animation:none;border-style:solid;border-color:rgba(255,209,102,.95)}
+  #planeHunt.lock .ring::after{animation:none;border-color:rgba(255,209,102,0)}
+  #planeHunt.lock .phTitle{background:rgba(255,209,102,.92);color:#4A3105}
+  @media (prefers-reduced-motion:reduce){
+    #planeHunt .ring{animation:none}
+    #planeHunt .ring::after{animation:none}
+  }
+
+  /* 探索场景的返回 */
+  #exploreBack{
+    position:absolute;z-index:6;
+    left:50%;transform:translateX(-50%);
+    bottom:calc(env(safe-area-inset-bottom,0px) + 26px);
+    padding:11px 26px;border-radius:99px;border:none;
+    background:rgba(20,16,14,.5);color:#fff;
+    font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:.04em;
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    cursor:pointer;display:none;
+  }
+  #exploreBack.show{display:block}
+  #exploreBack:active{background:rgba(20,16,14,.66)}
+
+  /* ---------- 识别页（无白底，全屏实景 + 取景框） ---------- */
+  #scanSheet{justify-content:center;gap:28px}
+  #scanFrame{
+    position:relative;
+    width:min(62vmin,262px);height:min(62vmin,262px);
+    border-radius:28px;
+    border:0;
+    flex:0 0 auto;
+  }
+  /* 取景框：四角粗黑折线（二维码扫描框的样子）。
+     只留一道很淡的深色投影做层次，不加任何白色晕边 —— 加了会在黑线旁边读成一条白边 */
+  #scanFrame i.c{
+    position:absolute;width:54px;height:54px;
+    border:8px solid #14100E;border-radius:12px;
+    filter:drop-shadow(0 2px 6px rgba(20,16,14,.26));
+    transition:border-color .16s ease, transform .16s ease;
+  }
+  /* 识别有进展时角标转深橙（仍是深色线，不会跳成白框） */
+  #scanFrame.warm i.c{border-color:#D2541A;transform:scale(1.04)}
+  #scanFrame i.tl{top:-3px;left:-3px;border-right:0;border-bottom:0;border-radius:16px 0 0 0}
+  #scanFrame i.tr{top:-3px;right:-3px;border-left:0;border-bottom:0;border-radius:0 16px 0 0}
+  #scanFrame i.bl{bottom:-3px;left:-3px;border-right:0;border-top:0;border-radius:0 0 0 16px}
+  #scanFrame i.br{bottom:-3px;right:-3px;border-left:0;border-top:0;border-radius:0 0 16px 0}
+  /* 扫描横线：与边框同一粗细、实心一条，两端不收细 */
+  #scanLine{
+    position:absolute;left:8%;right:8%;height:8px;border-radius:2px;
+    background:#14100E;
+    animation:scanSweep 2.2s ease-in-out infinite;
+  }
+  #scanFrame.warm #scanLine{background:#D2541A}
+  @keyframes scanSweep{
+    0%{top:12%;opacity:0}
+    18%{opacity:1}
+    82%{opacity:1}
+    100%{top:88%;opacity:0}
+  }
+  .scanFoot{
+    display:flex;flex-direction:column;align-items:center;
+    width:100%;position:relative;z-index:2;
+  }
+  /* 识别页底部小字与进度横线：已按要求去掉 */
+  #scanDebug{display:none}
+  #camFail{margin-top:0}
+
+  /* ---------- 结算 ---------- */
+  #resultTitle{font-size:clamp(21px,5.6vmin,28px);font-weight:800}
+  #resultStars{display:flex;gap:6px;justify-content:center;margin:14px 0 6px}
+  #resultStars .rs{width:22px;height:22px}
+  #resultStars .rs svg path{fill:#E2DCD4}
+  #resultStars .rs.on svg path{fill:#FFAE18}
+  #photoCard{
+    position:relative;
+    width:min(300px,78vw);height:min(34vh,268px);
+    margin:16px 0 2px;border-radius:20px;
+    background:#F3EEE8;overflow:hidden;
+    display:grid;place-items:center;
+    color:var(--ink3);font-size:12.5px;line-height:1.9;letter-spacing:.04em;
+    text-align:center;padding:0 22px;
+  }
+  #photoCard img{
+    position:absolute;left:16px;top:16px;
+    width:calc(100% - 32px);height:calc(100% - 32px);
+    object-fit:contain;display:none;
+  }
+  #photoCard.has-tpl img{display:block}
+  #photoCard.has-tpl #photoPh{display:none}
+  /* 0 星：不给模板，改成加油提示 */
+  #result.zero #photoCard{
+    background:#FFF7EA;border:1.5px dashed #F3D9AE;
+    color:#B4802B;font-size:13px;font-weight:600;line-height:1.95;
+  }
+  #result.zero #shotBtn{display:none}
+  #result.zero #resultHint{color:#B4802B;font-weight:600;font-size:12.5px}
+  /* 再玩一次 / 更换形象 并排 */
+  #resultActions{
+    display:flex;gap:10px;align-items:center;justify-content:center;
+    margin-top:18px;width:100%;
+  }
+  #resultActions .btn{margin-top:0}
+  #resultActions #againBtn{padding:15px 28px}
+  #resultActions #changeBtn{padding:15px 24px;font-size:14.5px}
+  #resultHint{
+    margin-top:14px;font-size:12px;color:var(--ink3);letter-spacing:.03em;
+  }
+
+  /* ---------- 拍照 ---------- */
+  /* 不再是"整块实景嵌进模板的洞里"，而是：全屏实景当背景，
+     模板人物当一张透明贴纸站在画面下半部，人把自己脸对准脖子上的圆框 */
+  /* ---------- 拍照：两步 ----------
+     第一步"识脸"：纯白底 + 中间一个正圆取景圈（圆里就是待会儿贴到小人身上的那张脸）；
+     第二步"合照"：米白底（和成片同一个底色）+ 模板小人 + 脖子上的圆圈脸。 */
+  #capture{
+    justify-content:flex-start;
+    background:#fff;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) 0 calc(env(safe-area-inset-bottom,0px) + 20px);
+  }
+  #capture[data-step="pose"]{background:#F5F0E7}
+  #capture[data-step="face"] #tplStrip,
+  #capture[data-step="face"] #capStage,
+  #capture[data-step="pose"] #faceScan,
+  #capture[data-step="pose"] #capFlip{display:none}
+
+  /* 识脸页 */
+  #faceScan{
+    flex:1 1 auto;min-height:0;width:100%;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:16px;padding:0 24px;
+  }
+  #scanWrap{position:relative;flex:0 0 auto;display:grid;place-items:center}
+  /* 圆圈取景：圆里就是实景，圆外纯白 —— 一眼就懂"要把脸放进来" */
+  #scanCv{
+    display:block;width:76vw;height:76vw;
+    max-width:42vh;max-height:42vh;      /* 矮屏别把圆圈撑爆 */
+    border-radius:50%;background:#EFE8DE;
+    box-shadow:0 0 0 2px rgba(20,16,14,.10), 0 24px 56px rgba(20,16,14,.16);
+  }
+  /* 圈外再一道很淡的虚线，暗示"摆进来" */
+  #scanRing{
+    position:absolute;left:50%;top:50%;
+    width:calc(76vw + 24px);height:calc(76vw + 24px);
+    max-width:calc(42vh + 24px);max-height:calc(42vh + 24px);
+    transform:translate(-50%,-50%);
+    border-radius:50%;border:2px dashed rgba(20,16,14,.13);
+    pointer-events:none;
+  }
+  #scanTitle{font-size:16.5px;font-weight:800;color:var(--ink);letter-spacing:.02em}
+  #scanSub{font-size:11.5px;color:var(--ink3);letter-spacing:.04em;line-height:1.6}
+
+  /* 已获得的合照模板：一行可点的缩略图 */
+  #tplStrip{
+    display:flex;gap:9px;width:100%;
+    padding:6px 18px 14px;
+    overflow-x:auto;overflow-y:hidden;
+    /* 用 auto 外边距居中，而不是 justify-content:center —— 后者在 5 张时会把
+       两头挤出屏幕，第一张卡还被裁掉一截且滑不回来 */
+    align-items:flex-end;
+    flex:0 0 auto;scrollbar-width:none;
+    -webkit-overflow-scrolling:touch;
+  }
+  #tplStrip > .tplChip:first-child{margin-left:auto}
+  #tplStrip > .tplChip:last-child{margin-right:auto}
+  #tplStrip::-webkit-scrollbar{display:none}
+  #tplStrip:empty{display:none}
+  /* 缩略图跟着模板改成横向（模板图本身就是横的） */
+  .tplChip{
+    position:relative;flex:0 0 auto;
+    width:76px;height:56px;padding:0;
+    border:2px solid transparent;border-radius:12px;
+    background:#F1EBE4;overflow:hidden;cursor:pointer;font-family:inherit;
+    transition:transform .22s cubic-bezier(.34,1.56,.64,1), border-color .2s;
+  }
+  .tplChip .ph{
+    position:absolute;inset:0;display:grid;place-items:center;
+    font-size:10.5px;font-weight:700;color:#B5A897;letter-spacing:.06em;
+  }
+  .tplChip img{position:absolute;inset:2px 2px 13px;width:calc(100% - 4px);height:calc(100% - 15px);object-fit:contain;display:block}
+  .tplChip .badge{
+    position:absolute;left:0;right:0;bottom:0;height:14px;
+    display:grid;place-items:center;
+    font-size:9px;font-weight:800;letter-spacing:.08em;
+    color:#7C4A12;background:rgba(255,209,102,.94);
+  }
+  .tplChip.sel{
+    border-color:var(--ink);
+    transform:translateY(-4px);
+    box-shadow:0 9px 20px rgba(20,16,14,.18);
+  }
+
+  /* 合照舞台：整块透明，模板图由 JS 按比例摆进去 */
+  #capStage{
+    position:relative;flex:1 1 auto;
+    width:100%;min-height:0;background:transparent;
+    pointer-events:none;
+  }
+  /* 模板人物：透明底的贴纸，尺寸 / 位置全由 layoutCapScene() 给 */
+  #capTemplate{
+    position:absolute;display:none;
+    object-fit:contain;
+    filter:drop-shadow(0 16px 32px rgba(20,16,14,.26));
+  }
+  /* 人脸贴片：一块椭圆形的实景，直接贴在小人脖子上（就是拍出来的样子）。
+     画布每帧从摄像头里取中间那块脸重绘进去；圆/椭圆由这里的圆角 + 羽化遮罩给出，
+     边缘柔一点才像"长上去的"，硬方角会很突兀。 */
+  #capFaceCv{
+    position:absolute;display:none;pointer-events:none;
+    border-radius:50%;
+    filter:drop-shadow(0 2px 5px rgba(20,16,14,.34));
+  }
+  /* 反转镜头：放在模板条下面一行，五张模板时不会被挡住 */
+  #capFlip{
+    position:absolute;z-index:5;
+    right:14px;top:calc(env(safe-area-inset-top,0px) + 92px);
+    width:42px;height:42px;border-radius:50%;border:none;
+    background:rgba(20,16,14,.46);color:#fff;
+    display:grid;place-items:center;cursor:pointer;
+    backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+    box-shadow:0 6px 16px rgba(20,16,14,.22);
+    transition:transform .18s ease, background .2s;
+  }
+  #capFlip:active{transform:scale(.92)}
+  #capFlip svg{width:20px;height:20px}
+  /* 识脸页是白底，深色圆钮太重，换成浅灰；位置抬到圆圈上方，不压虚线环 */
+  #capture[data-step="face"] #capFlip{
+    top:calc(env(safe-area-inset-top,0px) + 14px);
+    background:rgba(20,16,14,.055);color:var(--ink2);box-shadow:none;
+  }
+  .capActions{
+    display:flex;gap:12px;align-items:center;justify-content:center;
+    margin-top:18px;width:100%;
+  }
+  .capActions .btn{margin-top:0}
+  #capBack{padding:15px 34px}
+  #shootBtn{padding:15px 52px}
+  /* 识脸页还没出画面时，主按钮压暗一点，避免"按了没反应" */
+  #shootBtn.wait{opacity:.42;transition:opacity .2s}
+
+  /* 拍照结果：一块暖白底 + 一张带白边的照片。
+     这里不能再透明 —— 照片本身已经是米白底，页面再透出实景的话，
+     一眼还能看见自己，跟"合照"的感觉打架。 */
+  #shotSheet{justify-content:center;gap:14px;background:#EFE8DE}
+  #shotTitle{
+    font-size:12.5px;font-weight:700;letter-spacing:.12em;color:#fff;
+    padding:6px 16px;border-radius:99px;background:rgba(20,16,14,.55);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  }
+  #shotFrame{
+    padding:11px;background:#fff;border-radius:6px;
+    box-shadow:0 20px 48px rgba(20,16,14,.34);
+    max-width:90vw;flex:0 0 auto;
+  }
+  #shotImg{
+    display:block;max-width:calc(90vw - 22px);max-height:60vh;
+    border-radius:2px;
+    -webkit-touch-callout:default;
+    -webkit-user-select:auto;user-select:auto;
+  }
+  #shotSheet .capActions{margin-top:2px}
+  #saveHint{
+    font-size:12px;color:#fff;letter-spacing:.04em;
+    padding:6px 15px;border-radius:99px;background:rgba(20,16,14,.48);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  }
+
+  /* ---------- 杂项 ---------- */
+  #arToggle{
+    position:absolute;z-index:15;
+    top:calc(env(safe-area-inset-top,0px) + 12px);right:12px;
+    width:40px;height:40px;border-radius:13px;
+    border:1px solid var(--line);background:rgba(255,255,255,.9);
+    color:var(--ink2);font-size:10px;font-weight:700;
+    display:grid;place-items:center;cursor:pointer;letter-spacing:.06em;
+    transition:all .2s;font-family:inherit;
+    box-shadow:0 4px 12px rgba(20,16,14,.06);
+  }
+  #arToggle.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  body.playing #arToggle{opacity:.42}
+  body:not(.playing) #arToggle{display:none}
+
+  #toast{
+    position:absolute;z-index:30;left:50%;bottom:14%;transform:translate(-50%,10px);
+    padding:10px 18px;border-radius:99px;font-size:12.5px;font-weight:600;
+    background:rgba(20,16,14,.86);color:#fff;
+    opacity:0;transition:all .3s;pointer-events:none;white-space:nowrap;
+  }
+  #toast.show{opacity:1;transform:translate(-50%,0)}
+  #crash{
+    position:absolute;z-index:99;left:12px;right:12px;
+    bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+    padding:10px 14px;border-radius:12px;
+    background:rgba(214,58,48,.94);color:#fff;
+    font-size:12px;line-height:1.55;word-break:break-all;
+  }
+
+  /* 矮屏（iPhone SE 等）压缩纵向占用 */
+  @media (max-height: 660px){
+    .eyebrow{margin-bottom:8px}
+    h1{font-size:24px}
+    .sub{font-size:12.5px;margin-top:6px;line-height:1.7}
+    #pickers{margin-top:14px;gap:10px}
+    .pick{width:70px;height:80px;border-radius:18px}
+    .pick img{width:50px;height:36px}
+    #scanFrame{width:min(56vmin,208px);height:min(56vmin,208px);border-radius:24px}
+    .btn{padding:13px 38px;font-size:15px}
+    #photoCard{height:min(30vh,190px)}
+    #capture{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
+    #tplStrip{padding-bottom:6px;gap:7px}
+    .tplChip{width:66px;height:50px;border-radius:11px}
+    .capActions{margin-top:13px}
+    #shootBtn{padding:13px 44px}
+    #capBack{padding:13px 28px}
+    #shotImg{max-height:48vh}
+  }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="fallback"></div>
+  <video id="cam" playsinline muted autoplay></video>
+  <div id="camMask"></div>
+
+  <canvas id="three"></canvas>
+  <canvas id="game"></canvas>
+
+  <!-- 探索：寻找平面 -->
+  <div id="planeHunt" class="hide">
+    <div class="ph">
+      <div class="ring"></div>
+      <div class="phTitle">正在寻找平面…</div>
+      <div class="phHint">把手机对着地面，稍微晃一晃</div>
+    </div>
+  </div>
+
+  <button id="exploreBack" type="button">返回扫描</button>
+
+  <div id="hud">
+    <div id="slots"></div>
+    <div id="tip">拖动屏幕移动小精灵</div>
+  </div>
+
+  <button id="arToggle" type="button">AR</button>
+  <div id="toast"></div>
+
+  <!-- 第一步：纯扫描（无白底，全屏实景 + 取景框） -->
+  <div class="sheet clear" id="scanSheet">
+    <div id="scanTip" class="hide">vv aa dd 正在认真工作，<br>让我们来看看它们在干什么吧</div>
+
+    <div id="scanFrame">
+      <i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+      <div id="scanLine"></div>
+    </div>
+
+    <div class="scanFoot">
+      <div id="scanDebug">正在开启摄像头…</div>
+      <button class="btn ghost" id="camFail" type="button" hidden>摄像头不可用 · 先直接体验</button>
+    </div>
+  </div>
+
+  <!-- 第二步：扫描成功后进入 —— 接住星星 + 挑选角色 -->
+  <div class="sheet light hide" id="intro">
+    <div class="eyebrow">AR · 课程互动</div>
+    <h1>接住<em>星星</em></h1>
+    <p class="sub">拖动小精灵，躲开炸弹，收集星星解锁不同合照</p>
+
+    <div id="pickers">
+      <button class="pick sel" data-char="v" type="button">
+        <img src="chars/v.png" alt="vv"><span>vv</span>
+      </button>
+      <button class="pick" data-char="a" type="button">
+        <img src="chars/a.png" alt="aa"><span>aa</span>
+      </button>
+      <button class="pick" data-char="d" type="button">
+        <img src="chars/d.png" alt="dd"><span>dd</span>
+      </button>
+    </div>
+
+    <button class="btn" id="startBtn" type="button">开始游戏</button>
+  </div>
+
+  <!-- 结算 -->
+  <div class="sheet light hide" id="result">
+    <div id="resultTitle">收集完成</div>
+    <div id="resultStars"></div>
+
+    <div id="photoCard">
+      <img id="photoImg" alt="">
+      <span id="photoPh">合照模板</span>
+    </div>
+
+    <div id="resultActions">
+      <button class="btn" id="againBtn" type="button">再玩一次</button>
+      <button class="btn ghost" id="changeBtn" type="button">更换形象</button>
+    </div>
+    <button class="btn ghost" id="shotBtn" type="button">去拍照</button>
+    <div id="resultHint">星星收集数量越多，合照伙伴越多哟</div>
+  </div>
+
+  <!-- 拍照：第一步识脸（白底 + 圆圈），第二步把圆圈脸贴到模板上 -->
+  <div class="sheet hide" id="capture" data-step="face">
+    <!-- 第一步：白底 + 中间一个正圆取景圈 -->
+    <div id="faceScan">
+      <div id="scanWrap">
+        <canvas id="scanCv"></canvas>
+        <div id="scanRing"></div>
+      </div>
+      <div id="scanTitle">把脸放进圆圈里</div>
+      <div id="scanSub">圈里这块会贴到小人身上</div>
+    </div>
+
+    <div id="tplStrip"></div>
+
+    <div id="capStage">
+      <img id="capTemplate" alt="">
+      <canvas id="capFaceCv"></canvas>
+    </div>
+
+    <!-- 反转镜头：屏幕右上角 -->
+    <button id="capFlip" type="button" aria-label="反转镜头">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.4 9.2A4 4 0 0 1 8.3 5.6h1.9"/>
+        <path d="M19.6 14.8a4 4 0 0 1-3.9 3.6h-1.9"/>
+        <path d="M8.9 3.1 11 5.2 8.9 7.3"/>
+        <path d="M15.1 16.7 13 18.8l2.1 2.1"/>
+      </svg>
+    </button>
+
+    <div class="capActions">
+      <button class="btn ghost" id="capBack" type="button">返回</button>
+      <button class="btn" id="shootBtn" type="button">拍照</button>
+    </div>
+  </div>
+
+  <!-- 拍照结果：暖白底 + 一张带白边的照片（网页存不进相册，改成提示长按保存） -->
+  <div class="sheet clear hide" id="shotSheet">
+    <div id="shotTitle">拍好啦</div>
+    <div id="shotFrame"><img id="shotImg" alt="合照"></div>
+    <div id="saveHint">长按图片保存到相册</div>
+    <div class="capActions">
+      <button class="btn ghost" id="retakeBtn" type="button">重新拍摄</button>
+      <button class="btn" id="shotDone" type="button">完成</button>
+    </div>
+    <button class="btn dark" id="exploreBtn" type="button">继续探索</button>
+  </div>
+</div>
+
+<script>
+/* 线上分享链接带 sharecode，网关只放行带该参数的请求；
+   静态资源需要带上同一份参数，否则会被拦成 403。 */
+(function(){
+  var m = /[?&]sharecode=([^&]+)/.exec(location.search || '');
+  window.ASSET_Q = m ? '?sharecode=' + m[1] : '';
+})();
+</script>
+<script>
+(function(){
+'use strict';
+
+/* =========================================================================
+   1. 配置
+   ========================================================================= */
+const CONFIG = {
+  starTotal: 5,
+  firstStarDelay: 0.7,
+
+  starGapFrom: 3.0,
+  starGapTo:   2.0,
+  starGapJitter: 0.4,
+
+  starFallFrom: 2.75,
+  starFallTo:   2.05,
+
+  bombStartAfterStar: 2,
+  bombGapFrom: 2.8,
+  bombGapTo:   1.6,
+  bombGapJitter: 0.4,
+  bombFallFrom: 2.6,
+  bombFallTo:   1.9,
+  stunDuration: 1.45,
+
+  // 炸弹贴着星星生成，形成夹击（概率与贴近度提高 = 更难）
+  bombBesideChance: 0.95,
+  bombBesideMin: 50,
+  bombBesideMax: 92,
+  bombDelayMin: 0.12,
+  bombDelayMax: 0.32,
+
+  followStiffness: 21,
+  keySpeed: 720,
+  spriteWidth: 96,
+  spriteHeight: 88,          // 形象整体缩小（原 116，屏幕上太占地方）
+  groundRatio: 0.845,
+  catchTolerance: 0.86,      // 接触判定的圆补偿，也收一点
+  catchBoxW: 0.56,           // 判定框宽度（占形象宽的比例）—— 原来 0.88 太大，看着还远就吃到了
+  catchBoxH: 0.78,           // 判定框高度（占形象高的比例）
+
+  // 图像识别（黑色图形）
+  scanNeed: 6,               // 连续命中帧数（约 0.4s）
+  scanInterval: 0.07,        // 检测间隔（秒）
+  scanMinContrast: 48,       // 画面最暗↔最亮的落差，低于此认为没有可用图形
+  scanThresholdRatio: 0.42,  // 阈值落在暗部→亮部之间的位置（0=全暗，1=全亮）
+  scanMinLum: 26,            // 阈值下限，防止全暗画面
+  scanMaxLum: 132,           // 阈值上限，防止强光下把灰墙面算成黑
+  scanMinAreaPct: 0.6,       // 候选块最小占画幅比例
+  scanMaxAreaPct: 90,
+  scanMinFill: 0.34,         // 包围盒填充率（实心度）
+  scanMinSide: 8,            // 最小边像素（检测画布上）
+  scanMinCount: 34,
+  scanRequired: 3,           // 必须同时看到几个图形才开局（后续「单图形互动」改成 1 即可）
+  scanSizeRatio: 2.2,        // 同组图形面积差上限（最大/最小）
+  scanAlignTol: 0.95,        // 同组图形垂直错位上限（相对平均高度）
+};
+
+/* 三个形象：立体建模（FBX）+ 选项缩略图 + 名字 + 性格 */
+const CHARS = {
+  v: { key:'v', name:'vv', persona:'cool', img:'chars/v.png', model:'models/ip_01_heart_static.fbx', accent:'#4A9EFF' },
+  a: { key:'a', name:'aa', persona:'warm', img:'chars/a.png', model:'models/ip_02_bubble_static.fbx', accent:'#FF7A45' },
+  d: { key:'d', name:'dd', persona:'shy',  img:'chars/d.png', model:'models/ip_03_leaf_static.fbx', accent:'#FF8FAB' },
+};
+const CHAR_IMG = {};
+
+/* 三种性格：待机幅度、接到星星的动作包络都按这里分派
+   cool 装酷——几乎不呼吸、慢慢转头、微微抬下巴
+   warm 热情——呼吸快而大、随移动大幅侧倾
+   shy  腼腆——小幅快抖、含胸低头 */
+const PERSONA = {
+  cool: { breath: 1.15, amp: 0.55, lean: 0.70, rotY: 0.07, tilt: -0.055, stun: 0.55 },
+  warm: { breath: 2.35, amp: 1.35, lean: 1.50, rotY: 0.16, tilt:  0.000, stun: 1.30 },
+  shy:  { breath: 1.75, amp: 1.00, lean: 1.00, rotY: 0.10, tilt:  0.070, stun: 0.85 },
+};
+const personaOf = k => PERSONA[(CHARS[k] || CHARS.v).persona] || PERSONA.warm;
+
+/* 接到星星的动作包络：e 从 0 → 1。
+   返回位移 / 旋转 / 缩放的增量，3D 与 2D 兜底共用同一套参数。 */
+function hitPose(persona, e){
+  const hop = Math.sin(e * Math.PI);
+  const land = e > 0.72 ? Math.sin((e - 0.72) / 0.28 * Math.PI) : 0;
+
+  if(persona === 'cool'){
+    /* 装酷：不蹦，只是肩膀一顿、抬下巴、慢悠悠侧一下头 */
+    return {
+      dy: hop * 0.045,
+      rotX: -hop * 0.10,
+      rotY: hop * 0.22,
+      rotZ: hop * 0.045,
+      sx: 1 - hop * 0.015 + land * 0.03,
+      sy: 1 + hop * 0.02 - land * 0.04,
+      scale: 1 + hop * 0.018,
+    };
+  }
+  if(persona === 'shy'){
+    /* 腼腆：不再缩起来低头，改成不好意思地抬头往上看 ——
+       下巴抬起来、上身轻轻拔高一截，没有蹦跳，落地也不压扁 */
+    const up = Math.sin(e * Math.PI);
+    return {
+      dy: up * 0.048,
+      rotX: -up * 0.30,                              // 负值是抬头（同 cool 的"抬下巴"）
+      rotY: Math.sin(e * Math.PI * 2) * 0.055,
+      rotZ: Math.sin(e * Math.PI * 3) * 0.030 * (1 - e),
+      sx: 1 - up * 0.016,
+      sy: 1 + up * 0.055,                            // 拔高，配合抬头
+      scale: 1 + up * 0.018,
+    };
+  }
+  /* 热情：大跳 + 拉伸 + 扭身 + 落地压扁 */
+  return {
+    dy: hop * 0.40,
+    rotX: Math.sin(e * Math.PI * 2) * 0.18,
+    rotY: Math.sin(e * Math.PI * 2) * 0.46,
+    rotZ: Math.sin(e * Math.PI * 3) * 0.14 * (1 - e * 0.5),
+    sx: 1 - hop * 0.09 + land * 0.12,
+    sy: 1 + hop * 0.18 - land * 0.15,
+    scale: 1 + hop * 0.05,
+  };
+}
+
+/* 合照模板：1 ~ 5 星各一张（星数不够就取够得着的那张）。
+   图都是透明底 PNG，直接叠在实景上当"贴纸"用。
+   faceX / faceY = 脖子中轴在模板图里的相对位置（0~1）；
+   seat          = 贴片底边要比 faceY 再往下落多少，也就是脖子底（衣领）在哪。
+   这三个数都是量出来的：脖子的宽度按行扫一遍，宽度突然变宽的那一行就是衣领，
+   贴片压到这里，整截脖子被盖住，看着就是头接在身体上。换模板图必须重量。 */
+const TEMPLATES = [
+  { stars:1, src:'templates/1.png', faceX:0.591, faceY:0.170, seat:0.150 },
+  { stars:2, src:'templates/2.png', faceX:0.452, faceY:0.181, seat:0.140 },
+  { stars:3, src:'templates/3.png', faceX:0.388, faceY:0.336, seat:0.138 },
+  { stars:4, src:'templates/4.png', faceX:0.476, faceY:0.303, seat:0.138 },
+  { stars:5, src:'templates/5.png', faceX:0.449, faceY:0.258, seat:0.148 },
+];
+
+/* 合照卡：预览和成片共用同一套公式，所以"看到什么就拍到什么"。
+   下面这些全是相对画框（4:5，成片 1080×1350）的比例：
+   TPL_H     人物高度 / 画框高度
+   TPL_MAXW  人物宽度上限 / 画框宽度（横躺的模板往回收，别顶边）
+   TPL_Y     人物竖直落点（0.52：略偏下，上面留白）
+   HEAD_FB   圆圈脸直径 / 画框宽度 —— 只跟画框走，跟模板图多高多宽无关，
+             五张模板上这张脸就一定是同一个大小
+   HEAD_SEAT 贴片底边在 faceY 之下再落多少（各模板自己的 seat 优先） */
+const OUT_W     = 1080;
+const OUT_H     = 1350;
+const TPL_H     = 0.62;
+const TPL_MAXW  = 0.86;
+const TPL_Y     = 0.52;
+const HEAD_FB   = 0.262;       // 圆圈脸直径 / 画框宽（原来按模板高算，五张差出 20%）
+const HEAD_SEAT = 0.136;
+const FACE_RY   = 1.00;        // 取景圈是正圆，贴上去也必须是正圆，所见即所得
+
+/* 按星数取最高的那张模板 */
+function templateFor(stars){
+  let best = null;
+  TEMPLATES.forEach(t => { if(t.stars <= stars && (!best || t.stars > best.stars)) best = t; });
+  return best;
+}
+
+/* =========================================================================
+   2. 基础
+   ========================================================================= */
+const cvs     = document.getElementById('game');
+const ctx     = cvs.getContext('2d');
+const stage   = document.getElementById('stage');
+const slotsEl = document.getElementById('slots');
+const tipEl   = document.getElementById('tip');
+const scanEl  = document.getElementById('scanSheet');
+const scanFrameEl = document.getElementById('scanFrame');
+const introEl = document.getElementById('intro');
+const resultEl= document.getElementById('result');
+const capEl   = document.getElementById('capture');
+const shotEl  = document.getElementById('shotSheet');
+const arBtn   = document.getElementById('arToggle');
+const toastEl = document.getElementById('toast');
+const camEl   = document.getElementById('cam');
+const scanDbg = document.getElementById('scanDebug');
+const camFailBtn = document.getElementById('camFail');
+const resultTitleEl = document.getElementById('resultTitle');
+const photoCard = document.getElementById('photoCard');
+const photoImg  = document.getElementById('photoImg');
+const photoPh   = document.getElementById('photoPh');
+const hintEl    = document.getElementById('resultHint');
+const capFlipBtn = document.getElementById('capFlip');
+const scanTipEl  = document.getElementById('scanTip');
+const planeHuntEl= document.getElementById('planeHunt');
+const exploreBtn = document.getElementById('exploreBtn');
+const exploreBackEl = document.getElementById('exploreBack');
+
+let W = 0, H = 0, S = 1, groundY = 0;
+
+const clamp = (v,a,b) => v < a ? a : v > b ? b : v;
+const rand  = (a,b) => a + Math.random() * (b - a);
+const lerp  = (a,b,t) => a + (b - a) * t;
+const damp  = (cur,target,speed,dt) => lerp(cur, target, 1 - Math.exp(-speed * dt));
+
+let onResizeCapture = null;      // 拍照页在后面才初始化，这里先占位
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = stage.clientWidth;
+  H = stage.clientHeight;
+  cvs.width  = Math.round(W * dpr);
+  cvs.height = Math.round(H * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  S = clamp(Math.min(W / 390, H / 700), 0.72, 1.65);
+  groundY = H * CONFIG.groundRatio;
+
+  const sp = G.sprite;
+  sp.h = CONFIG.spriteHeight * S;
+  sp.w = sp.h * (R3.ready ? R3.aspect : SPRITE_ASPECT);
+  sp.y = groundY;
+  sp.x  = clamp(sp.x  || W / 2, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+  sp.tx = clamp(sp.tx || W / 2, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+
+  updateR3Layout();
+  if(onResizeCapture) onResizeCapture();   // 拍照页开着时窗口变了，重摆模板
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 180));
+
+const SPRITE_ASPECT = 2995 / 2363;   // 三张角色图的统一宽高比
+
+/* =========================================================================
+   3. 状态
+   ========================================================================= */
+const G = {
+  state: 'scan',            // scan | intro | playing | over | capture | plane | exploreShow
+  phase: 'play',            // play = 扫描三个图形进游戏；explore = 扫描水滴看它们在干什么
+  char: 'v',
+  t: 0,
+  score: 0,
+  best: 0,                  // 本次打开页面以来的最高星数
+  owned: [],                // 本次打开页面以来拿过的模板（星数），刷新页面即清空
+  hits: 0,
+  spawned: 0,
+  resolved: 0,
+  nextStarIn: 0,
+  nextBombIn: 0,
+  bombArmed: false,
+  endDelay: -1,
+  shake: 0,
+  stun: 0,
+  items: [],
+  particles: [],
+  ripples: [],
+  sprite: { x: 0, y: 0, w: 96, h: 116, tx: 0, mood: 'idle', moodT: 0 },
+};
+const ANIM = { t: 0, bounce: 0, sink: 0 };
+
+/* =========================================================================
+   3.5 立体形象（three.js + FBX）
+   ========================================================================= */
+const R3 = {
+  ok: false, ready: false,
+  renderer: null, scene: null, camera: null, group: null,
+  visH: 1, visW: 1,
+  aspect: 2995 / 2363,
+  currentKey: null,
+  anim: { t: 0, bounce: 0, sink: 0, hit: 0, hurt: 0, lean: 0 },
+};
+const modelCache = {};
+let threeLoading = null;
+
+/* =========================================================================
+   3.6 表情层
+   模型自带的眼睛是独立的浅色材质组，静态 FBX 没法用骨骼/形态改表情。
+   做法是在眼睛正前方叠一张透明平面贴图，接到星星时淡入、再自动淡出。
+   下面这组坐标不是估的，是逐个模型读 geometry.groups 的顶点包围盒量出来的：
+     v 心形  眼睛中心 ±0.212, y 0.5048  眼白 0.179×0.091
+     a 气泡  眼睛中心 ±0.179, y 0.6590  眼白 0.146×0.145
+     d 叶子  眼睛中心 ±0.190, y 0.2803  眼白 0.161×0.161
+   ========================================================================= */
+const FACE_W = 0.84;                          // 表情平面宽度（归一化空间里模型总高 = 1）
+const FACE_LAYOUT = {
+  v: { cy:0.505, h:0.42, cz:0.132, ex:0.252, ew:0.213, eh:0.216 },
+  a: { cy:0.659, h:0.45, cz:0.138, ex:0.213, ew:0.174, eh:0.321 },
+  d: { cy:0.280, h:0.40, cz:0.148, ex:0.226, ew:0.191, eh:0.403 },
+};
+
+function heartPath(g, cx, cy, size){
+  const k = size / 2;
+  g.beginPath();
+  g.moveTo(cx, cy + k * 0.86);
+  g.bezierCurveTo(cx - k * 1.62, cy - k * 0.18, cx - k * 0.74, cy - k * 1.30, cx, cy - k * 0.40);
+  g.bezierCurveTo(cx + k * 0.74, cy - k * 1.30, cx + k * 1.62, cy - k * 0.18, cx, cy + k * 0.86);
+  g.closePath();
+}
+
+/* 把性格画成一张贴图，两种时机各一套：
+     kind='catch' 接到星星：cool=墨镜 / warm=爱心眼 / shy=腮红
+     kind='hurt'  被炸到：  cool=歪掉的破墨镜 / warm=圈圈眼+炸开 / shy=>_< + 强腮红
+   两套都是完整替换掉模型自带的眼睛，所以换表情时旧的不会叠在下面。 */
+function faceCanvas(persona, key, kind){
+  const L = FACE_LAYOUT[key];
+  const W = 512, H = Math.round(W * L.h / FACE_W);
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  if(!g) return c;
+
+  const eyeL = (0.5 - L.ex) * W, eyeR = (0.5 + L.ex) * W;
+  const cyPx = H * 0.5;
+
+  /* ---------- 被炸到 ---------- */
+  if(kind === 'hurt'){
+    if(persona === 'cool'){
+      /* 装酷：墨镜被震歪、镜片裂开，但人没躲 —— 只是抬了抬下巴。
+         右上角不放任何星芒（按要求去掉），"被炸"这件事全靠裂纹本身说 */
+      drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, { rot: -0.14, crack: true, noSpark: true });
+      return c;
+    }
+    if(persona === 'shy'){
+      /* 腼腆：眼睛挤成 >_<、整个人缩起来，脸红得更厉害 */
+      drawBlush(g, W, H, eyeL, eyeR, cyPx, L, 1.15, 0.70, 0.23);
+      drawSqueeze(g, eyeL, cyPx, L, W, H, 1);
+      drawSqueeze(g, eyeR, cyPx, L, W, H, -1);
+      return c;
+    }
+    /* 热情：两只眼睛转成圈圈（晕眩），圈圈加粗放大，周围不放星星 */
+    const sr = Math.min(W, H) * 0.240;
+    drawSwirl(g, eyeL, cyPx, sr);
+    drawSwirl(g, eyeR, cyPx, sr * 0.95);
+    return c;
+  }
+
+  /* ---------- 接到星星 ---------- */
+  if(persona === 'cool'){
+    drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, {});
+    return c;
+  }
+
+  if(persona === 'shy'){
+    /* 腼腆：不遮眼睛，只在脸颊加两团晕（汗滴已按要求去掉） */
+    drawBlush(g, W, H, eyeL, eyeR, cyPx, L, 1);
+    return c;
+  }
+
+  /* 热情：两只爱心眼，一大一小错落，更像"眼里冒心" */
+  const hs = L.ew * W * 1.58;
+  [[eyeL, 1], [eyeR, 0.90]].forEach(([cx, k]) => {
+    const size = hs * k;
+    g.save();
+    g.shadowColor = 'rgba(255,40,80,.60)';
+    g.shadowBlur = size * 0.42;
+    const hg = g.createLinearGradient(cx, cyPx - size * 0.7, cx, cyPx + size * 0.7);
+    hg.addColorStop(0, '#FF6785');
+    hg.addColorStop(1, '#D81238');
+    g.fillStyle = hg;
+    heartPath(g, cx, cyPx, size);
+    g.fill();
+    g.restore();
+
+    // 左上一道白高光
+    g.save();
+    heartPath(g, cx, cyPx, size);
+    g.clip();
+    g.fillStyle = 'rgba(255,255,255,.72)';
+    g.beginPath();
+    g.ellipse(cx - size * 0.24, cyPx - size * 0.28, size * 0.12, size * 0.16, -0.55, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+  });
+  return c;
+}
+
+/* 一副墨镜。只用"玻璃渐变 + 斜向高光 + 一枚星芒"来立住，
+   不加白色描边 —— 在手机那个尺寸下，白描边会读成一闪而过的白框眼镜。 */
+function drawGlasses(g, W, H, cyPx, eyeL, eyeR, L, o){
+  o = o || {};
+  const lensW = L.ew * 1.50 * W;
+  const lensH = Math.max(L.eh * 1.62 * H, 26);
+  const y0    = cyPx - lensH * 0.54;
+  const rr    = lensH * 0.30;
+  const xs    = [eyeL - lensW * 0.5, eyeR - lensW * 0.5];
+
+  g.save();
+  if(o.rot){
+    g.translate(W * 0.5, cyPx);
+    g.rotate(o.rot);
+    g.translate(-W * 0.5, -cyPx);
+  }
+
+  // 镜腿：只伸出短短一截，不横贯整张脸
+  const armH = lensH * 0.19;
+  g.fillStyle = '#211E2B';
+  g.fillRect(xs[0] - W * 0.048, cyPx - armH * 0.5, W * 0.048 + 6, armH);
+  g.fillRect(xs[1] + lensW - 6, cyPx - armH * 0.5, W * 0.048, armH);
+
+  // 鼻梁
+  const bridgeW = (xs[1] - xs[0]) - lensW + 8;
+  if(bridgeW > 0) g.fillRect(xs[0] + lensW - 4, cyPx - lensH * 0.10, bridgeW, lensH * 0.20);
+
+  xs.forEach(x => {
+    // 镜片：上浅下深的玻璃，深色身体上也读得出"这是一副墨镜"
+    roundRect(g, x, y0, lensW, lensH, rr);
+    const lg = g.createLinearGradient(x, y0, x + lensW * 0.45, y0 + lensH);
+    lg.addColorStop(0,   '#3F3A4B');
+    lg.addColorStop(.45, '#24212E');
+    lg.addColorStop(1,   '#141220');
+    g.fillStyle = lg;
+    g.fill();
+
+    g.save();
+    roundRect(g, x, y0, lensW, lensH, rr);
+    g.clip();
+    // 斜向高光：墨镜"亮"的那一笔，靠它跟纯黑的身体分开（窄一点才不会糊成白片）
+    const sg = g.createLinearGradient(x, y0 + lensH * 0.95, x + lensW * 0.80, y0 + lensH * 0.05);
+    sg.addColorStop(0,   'rgba(255,255,255,0)');
+    sg.addColorStop(.40, 'rgba(255,255,255,.40)');
+    sg.addColorStop(.52, 'rgba(255,255,255,.07)');
+    sg.addColorStop(1,   'rgba(255,255,255,0)');
+    g.fillStyle = sg;
+    g.fillRect(x, y0, lensW, lensH);
+    g.restore();
+  });
+
+  // 右上角星芒：小尺寸下这枚星芒就是"墨镜反光"的主要读点，压在外侧边角上
+  if(!o.noSpark) sparkle(g, xs[1] + lensW * 0.96, y0 + lensH * 0.06, lensH * 0.26);
+
+  /* 裂开的镜片：裁在镜片形状里，裂纹会一直裂到镜片边缘，看起来才像真碎了 */
+  if(o.crack){
+    g.save();
+    roundRect(g, xs[0], y0, lensW, lensH, rr);
+    g.clip();
+    drawCrack(g, xs[0] + lensW * 0.46, y0 + lensH * 0.44, lensW, lensH);
+    g.restore();
+  }
+  g.restore();
+}
+
+/* 四角星芒 / 火花 */
+function sparkle(g, cx, cy, r, color){
+  g.save();
+  g.fillStyle = color || 'rgba(255,255,255,.94)';
+  g.beginPath();
+  g.moveTo(cx, cy - r * 1.75);
+  g.quadraticCurveTo(cx + r * 0.18, cy - r * 0.18, cx + r * 1.75, cy);
+  g.quadraticCurveTo(cx + r * 0.18, cy + r * 0.18, cx, cy + r * 1.75);
+  g.quadraticCurveTo(cx - r * 0.18, cy + r * 0.18, cx - r * 1.75, cy);
+  g.quadraticCurveTo(cx - r * 0.18, cy - r * 0.18, cx, cy - r * 1.75);
+  g.fill();
+  g.restore();
+}
+
+/* 镜片上的裂纹：一条主缝斜穿整块镜片，再从主缝上分出几条细支。
+   主缝重、支线轻 —— 这样在小尺寸下读成"裂了"，而不是一颗放光的星。
+   先铺一层深色再压亮白，深色镜片和斜高光上都读得出来。 */
+function drawCrack(g, cx, cy, w, h){
+  const main = [[-0.56,-0.66],[-0.20,-0.28],[-0.32, 0.04],[-0.04, 0.26],[0.30, 0.70]];
+  const branches = [
+    [[-0.20,-0.28],[ 0.09,-0.46],[ 0.36,-0.58]],
+    [[-0.32, 0.04],[-0.62, 0.16]],
+    [[-0.04, 0.26],[ 0.26, 0.04],[ 0.50, 0.10]],
+    [[-0.04, 0.26],[-0.20, 0.52]],
+  ];
+  const stroke = (pts, lw, color) => {
+    g.save();
+    g.strokeStyle = color;
+    g.lineWidth = lw;
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.beginPath();
+    for(let i = 0; i < pts.length; i++){
+      const px = cx + pts[i][0] * w, py = cy + pts[i][1] * h;
+      if(i === 0) g.moveTo(px, py); else g.lineTo(px, py);
+    }
+    g.stroke();
+    g.restore();
+  };
+
+  const lw = Math.max(6.2, h * 0.145);
+  [[main, 1], ...branches.map(b => [b, 0.62])].forEach(([pts, k]) => {
+    stroke(pts, lw * k * 1.75, 'rgba(8,6,10,.55)');       // 深色底：从浅色高光里抠出来
+    stroke(pts, lw * k,        'rgba(255,255,255,.96)');  // 亮缝
+    stroke(pts, lw * k * 0.34, 'rgba(255,255,255,1)');    // 更白更硬的芯
+  });
+}
+
+/* 脸颊两团晕（shy 专用）。rScale / dy 可以单独压一压，被炸时脸不能糊成一团红 */
+function drawBlush(g, W, H, eyeL, eyeR, cyPx, L, k, rScale, dyRatio){
+  const blushR = L.ew * W * 0.80 * (rScale || 1);
+  const blushY = cyPx + H * (dyRatio == null ? 0.19 : dyRatio);
+  [eyeL - L.ew * W * 0.34, eyeR + L.ew * W * 0.34].forEach(cx => {
+    const rg = g.createRadialGradient(cx, blushY, 0, cx, blushY, blushR);
+    rg.addColorStop(0,   'rgba(255,74,108,' + (0.88 * k) + ')');
+    rg.addColorStop(.45, 'rgba(255,96,126,'  + (0.52 * k) + ')');
+    rg.addColorStop(.78, 'rgba(255,120,148,' + (0.20 * k) + ')');
+    rg.addColorStop(1,   'rgba(255,140,164,0)');
+    g.fillStyle = rg;
+    g.beginPath(); g.arc(cx, blushY, blushR, 0, Math.PI * 2); g.fill();
+  });
+}
+
+/* 挤成 >_< 的眼睛：dir=1 左眼（尖角朝内），dir=-1 右眼。
+   先用深色描一遍做底，白线才不会糊进腮红里 */
+function drawSqueeze(g, cx, cy, L, W, H, dir){
+  const hw = L.ew * W * 0.46;
+  const hh = Math.min(L.eh * H * 0.42, hw * 0.82);
+  g.save();
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  g.moveTo(cx - dir * hw, cy - hh);
+  g.lineTo(cx + dir * hw, cy);
+  g.lineTo(cx - dir * hw, cy + hh);
+  g.strokeStyle = 'rgba(16,10,14,.55)';
+  g.lineWidth = Math.max(6.5, hh * 0.86);
+  g.stroke();
+  g.strokeStyle = 'rgba(246,243,250,.98)';
+  g.lineWidth = Math.max(4.0, hh * 0.54);
+  g.stroke();
+  g.restore();
+}
+
+/* 圈圈眼（晕眩）：线加粗，小尺寸下也读得出是在打转 */
+function drawSwirl(g, cx, cy, r){
+  g.save();
+  g.strokeStyle = 'rgba(255,255,255,.97)';
+  g.lineWidth = Math.max(5.5, r * 0.295);
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  g.beginPath();
+  for(let i = 0; i <= 160; i++){
+    const a  = (i / 160) * Math.PI * 3.30;
+    const rr = r * (i / 160) * 0.92;
+    const x  = cx + Math.cos(a) * rr;
+    const y  = cy + Math.sin(a) * rr * 0.92;
+    if(i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+  }
+  g.stroke();
+  g.restore();
+}
+
+function makeFaceMesh(key, kind){
+  if(!window.THREE) return null;
+  const L = FACE_LAYOUT[key];
+  if(!L) return null;
+
+  const tex = new THREE.CanvasTexture(faceCanvas(CHARS[key].persona, key, kind));
+  if('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 0,
+    depthTest: false,        // 永远盖在模型前面，避免被眼白顶掉
+    depthWrite: false,
+    toneMapped: false,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(FACE_W, L.h), mat);
+  mesh.position.set(0, L.cy, L.cz);
+  mesh.renderOrder = 20;
+  mesh.visible = false;
+  mesh.userData.hold = 0;                       // 亮着不淡出的剩余时间
+  mesh.userData.fade = (kind === 'hurt') ? 1.50 : 1.20;
+  return mesh;
+}
+
+/* 接星 / 被炸各一张脸。切换时把另一张直接关掉，旧表情不会残留在下面。
+   只有 dd 的接星表情（只加腮红）保留模型自带的眼睛，其余全部遮掉。 */
+const personaKeepsEyes = (k, kind) => kind === 'catch' && (CHARS[k] || CHARS.v).persona === 'shy';
+
+function setEyesVisible(key, on){
+  const c = modelCache[key];
+  if(!c || !c.eyeMats) return;
+  c.eyeMats.forEach(m => { m.visible = on; });
+}
+
+function hideFaceMesh(m){
+  if(!m) return;
+  m.material.opacity = 0;
+  m.visible = false;
+  m.userData.hold = 0;
+}
+
+function showFace(kind, hold){
+  const key = G.char;
+  const c = modelCache[key];
+  if(!c || !c.faces || !c.faces[kind]) return;
+
+  Object.keys(c.faces).forEach(k => { if(k !== kind) hideFaceMesh(c.faces[k]); });
+
+  const m = c.faces[kind];
+  m.material.opacity = 1;
+  m.visible = true;
+  m.userData.hold = hold || 0;
+  if(!personaKeepsEyes(key, kind)) setEyesVisible(key, false);
+}
+
+function loadThreeScript(){
+  if(threeLoading) return threeLoading;
+  threeLoading = new Promise(resolve => {
+    if(window.THREE && window.FBXLoader){ resolve(true); return; }
+    const s = document.createElement('script');
+    s.src = 'vendor/three-fbx.min.js' + (window.ASSET_Q || '');
+    s.async = true;
+    s.onload  = () => resolve(!!(window.THREE && window.FBXLoader));
+    s.onerror = () => resolve(false);
+    document.head.appendChild(s);
+  });
+  return threeLoading;
+}
+
+function initR3(){
+  if(!window.THREE || R3.ok) return R3.ok;
+  try{
+    const canvas = document.getElementById('three');
+    R3.renderer = new THREE.WebGLRenderer({ canvas, alpha:true, antialias:true, powerPreference:'high-performance' });
+  }catch(e){ return false; }
+
+  R3.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  if('outputColorSpace' in R3.renderer) R3.renderer.outputColorSpace = THREE.SRGBColorSpace;
+  R3.renderer.setClearAlpha(0);
+
+  R3.scene  = new THREE.Scene();
+  R3.camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  R3.camera.position.set(0, 0, 6);
+  R3.camera.lookAt(0, 0, 0);
+
+  /* 光从正面偏上来，再补一盏背光勾轮廓：本体是深色，靠高光和边缘光读出体积 */
+  R3.scene.add(new THREE.AmbientLight(0xffffff, 0.90));
+  const key  = new THREE.DirectionalLight(0xffffff, 2.30); key.position.set(1.2, 2.2, 5.0);  R3.scene.add(key);
+  const side = new THREE.DirectionalLight(0xffffff, 0.80); side.position.set(-2.8, 0.7, 2.8); R3.scene.add(side);
+  const rim  = new THREE.DirectionalLight(0xffffff, 1.20); rim.position.set(-0.6, 1.6, -4.0); R3.scene.add(rim);
+
+  /* world 只是用来整体倾斜：游戏时 rotation 恒为 0（等价于没有这层），
+     探索时把地面转成"从上往下看"的角度，人和地面一起转，关系不变 */
+  R3.world = new THREE.Group();
+  R3.scene.add(R3.world);
+
+  R3.group = new THREE.Group();
+  R3.world.add(R3.group);
+
+  R3.plane = makePlaneMesh();
+  R3.plane.visible = false;
+  R3.world.add(R3.plane);
+
+  /* 人压在平面上的接触影：跟着人一起滑，才有"贴着地蹭"的实感 */
+  R3.shadow = makeBlobShadow();
+  R3.shadow.visible = false;
+  R3.world.add(R3.shadow);
+
+  R3.ok = true;
+  updateR3Layout();
+  return true;
+}
+
+/* "识别到的平面"：一张带柔光圆斑的透明面片，平铺在脚下。
+   强度刻意压得很低 —— 它是提示，不是主角。 */
+function makePlaneMesh(){
+  const S = 256;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d');
+
+  const rg = g.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
+  rg.addColorStop(0,    'rgba(255,255,255,.13)');
+  rg.addColorStop(0.55, 'rgba(255,255,255,.07)');
+  rg.addColorStop(1,    'rgba(255,255,255,0)');
+  g.fillStyle = rg;
+  g.fillRect(0, 0, S, S);
+
+  // 两圈细线，像扫描出来的边界
+  g.strokeStyle = 'rgba(255,246,232,.42)';
+  g.lineWidth = 2;
+  g.beginPath(); g.arc(S/2, S/2, S * 0.44, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = 'rgba(255,196,74,.34)';
+  g.setLineDash([10, 12]);
+  g.beginPath(); g.arc(S/2, S/2, S * 0.34, 0, Math.PI * 2); g.stroke();
+
+  const tex = new THREE.CanvasTexture(cv);
+  if('colorSpace' in tex) tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2.7, 2.7), mat);
+  mesh.rotation.x = -Math.PI / 2;      // 平铺在 XZ 面上
+  mesh.renderOrder = -1;
+  return mesh;
+}
+
+/* 一块柔和的接触影（圆形渐变），贴在平面下方一点点 */
+function makeBlobShadow(){
+  const S = 128;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const g = cv.getContext('2d');
+  const rg = g.createRadialGradient(S/2, S/2, 0, S/2, S/2, S/2);
+  rg.addColorStop(0,   'rgba(10,8,6,.55)');
+  rg.addColorStop(.55, 'rgba(10,8,6,.28)');
+  rg.addColorStop(1,   'rgba(10,8,6,0)');
+  g.fillStyle = rg;
+  g.beginPath(); g.arc(S/2, S/2, S/2, 0, Math.PI * 2); g.fill();
+
+  const tex = new THREE.CanvasTexture(cv);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 1.05), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.002;
+  mesh.renderOrder = -1;
+  return mesh;
+}
+
+/* 探索场景的参数：整体倾多少、人多长、擦地多远 */
+const EXPLORE = {
+  tilt: 0.42,        // 世界绕 X 转多少：把地面转成"从上往下看"的角度
+  rotX: -1.05,       // 人躺下的角度（-90° 是正躺平；-60° 是半躺）
+  drop: -0.62,       // 整块往下挪，人落在画面下半
+  scale: 0.70,       // 人的长度（模型归一化后高度 = 1）
+  travel: 0.26,      // 前后擦地的距离
+  period: 1.50,      // 一个来回几秒
+};
+
+function updateR3Layout(){
+  if(!R3.ok) return;
+  R3.renderer.setSize(W, H, false);
+  R3.camera.aspect = W / Math.max(H, 1);
+  R3.camera.updateProjectionMatrix();
+  const fovRad = R3.camera.fov * Math.PI / 180;
+  R3.visH = 2 * Math.tan(fovRad / 2) * R3.camera.position.z;
+  R3.visW = R3.visH * R3.camera.aspect;
+}
+
+function loadModel(key){
+  return new Promise(resolve => {
+    if(modelCache[key]){ applyModel(key); resolve(true); return; }
+    if(!R3.ok || !window.FBXLoader){ resolve(false); return; }
+
+    const loader = new FBXLoader();
+    loader.load(CHARS[key].model + (window.ASSET_Q || ''), obj => {
+      const box    = new THREE.Box3().setFromObject(obj);
+      const size   = new THREE.Vector3(); box.getSize(size);
+      const center = new THREE.Vector3(); box.getCenter(center);
+
+      // 归一化：高度 = 1，底部落在 y=0，水平居中
+      const s = 1 / Math.max(size.y, 1e-6);
+      obj.scale.setScalar(s);
+      obj.position.set(-center.x * s, -box.min.y * s, -center.z * s);
+
+      /* 眼睛（眼白 + 高光）在 FBX 里是独立的材质组，记下来，
+         表情出现时把它们隐藏掉，就不会出现"新表情叠在旧眼睛上"的怪样子 */
+      const eyeMats = [];
+
+      obj.traverse(o => {
+        if(o.isMesh){
+          o.frustumCulled = false;
+          o.castShadow = false; o.receiveShadow = false;
+
+          /* FBX 里一个 mesh 带 3 套材质 / 7 个 group（身体 + 眼睛 + 高光）。
+             逐组转成统一的 Standard 材质，但保留各组自己的颜色，避免眼睛被涂黑。 */
+          const srcArr = Array.isArray(o.material) ? o.material : [o.material];
+          const conv = src => {
+            const base = src && src.color ? src.color.clone() : new THREE.Color(0x14100E);
+            const lum = base.r * 0.299 + base.g * 0.587 + base.b * 0.114;
+            // 身体原来是近纯黑，之前抬亮后整体发灰；现在直接钉成深炭黑，靠高光读体积
+            if(lum < 0.12){
+              base.setRGB(0.0090, 0.0090, 0.0112);
+            }
+            const mtl = new THREE.MeshStandardMaterial({
+              color: base,
+              roughness: 0.42,
+              metalness: 0.06,
+            });
+            if(src && src.map){ mtl.map = src.map; mtl.needsUpdate = true; }
+            if(lum >= 0.12) eyeMats.push(mtl);      // 浅色组 = 眼白 / 高光
+            return mtl;
+          };
+          o.material = Array.isArray(o.material) ? srcArr.map(conv) : conv(srcArr[0]);
+        }
+      });
+
+      const holder = new THREE.Group();
+      holder.add(obj);
+
+      /* 表情层挂在归一化空间里：模型转、缩放，它都跟着走，不会错位。
+         接星 / 被炸各一张，同一时间只会亮一张 */
+      const faces = { catch: makeFaceMesh(key, 'catch'), hurt: makeFaceMesh(key, 'hurt') };
+      Object.keys(faces).forEach(k => { if(faces[k]) holder.add(faces[k]); });
+
+      modelCache[key] = { holder, faces, eyeMats, aspect: size.x / Math.max(size.y, 1e-6) };
+      applyModel(key);
+      resolve(true);
+    }, undefined, () => resolve(false));
+  });
+}
+
+function applyModel(key){
+  const c = modelCache[key];
+  if(!c || !R3.group) return;
+
+  /* 换角色时把上一个模型的表情状态清干净，否则切回来会少一副眼睛 */
+  Object.keys(modelCache).forEach(k => {
+    const m = modelCache[k];
+    setEyesVisible(k, true);
+    if(m.faces) Object.keys(m.faces).forEach(x => hideFaceMesh(m.faces[x]));
+  });
+
+  while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
+  R3.group.add(c.holder);
+  R3.currentKey = key;
+  R3.aspect = c.aspect;
+  R3.ready = true;
+
+  // 判定盒宽度跟模型宽高比对齐
+  const sp = G.sprite;
+  sp.h = CONFIG.spriteHeight * S;
+  sp.w = sp.h * R3.aspect;
+  sp.x  = clamp(sp.x,  sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+  sp.tx = clamp(sp.tx, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
+}
+
+function syncR3(dt){
+  if(!R3.ok || !R3.ready) return;
+
+  /* 表情淡出：亮够时间之后自己退掉；几乎退干净了才把原眼睛放回去。
+     阈值不能太高 —— 抬到 0.45 时，dd 的 >_< 还淡淡地贴着，原眼睛已经回来了，
+     看起来就是"没遮住"；0.10 之后残影看不出来，也不会留空眼眶。 */
+  Object.keys(modelCache).forEach(k => {
+    const fs2 = modelCache[k].faces;
+    if(!fs2) return;
+    Object.keys(fs2).forEach(x => {
+      const f = fs2[x];
+      if(!f || !f.visible) return;
+      if(f.userData.hold > 0){ f.userData.hold -= dt; return; }
+      f.material.opacity -= dt * f.userData.fade;
+      if(f.material.opacity <= 0.001) hideFaceMesh(f);
+    });
+    const strong = Object.keys(fs2).some(x =>
+      fs2[x] && fs2[x].visible && fs2[x].material.opacity >= 0.10);
+    if(!strong) setEyesVisible(k, true);
+  });
+
+  /* 两个场景共用这一套渲染：游戏里站着，探索里躺在地上擦地；
+     扫描 / 选择 / 拍照一律不显示 */
+  const playing = (G.state === 'playing');
+  const showing = (G.state === 'exploreShow');
+  R3.group.visible = playing || showing;
+  if(R3.plane)  R3.plane.visible  = showing;
+  if(R3.shadow) R3.shadow.visible = showing;
+  R3.world.rotation.x = showing ? EXPLORE.tilt : 0;
+  R3.world.position.y = showing ? EXPLORE.drop : 0;
+
+  if(!playing && !showing){
+    R3.renderer.render(R3.scene, R3.camera);
+    return;
+  }
+  if(showing){ syncExploreShow(dt); return; }
+
+  const sp = G.sprite, a = R3.anim;
+  const persona = (CHARS[G.char] || CHARS.v).persona;
+  const P = personaOf(G.char);
+
+  a.t += dt;
+  a.bounce = damp(a.bounce, 0, 6, dt);
+  a.sink   = damp(a.sink,   0, 5, dt);
+  a.hit    = Math.max(0, a.hit  - dt);
+  a.hurt   = Math.max(0, a.hurt - dt);
+
+  const wx = (sp.x / W - 0.5) * R3.visW;
+  const wy = (0.5 - sp.y / H) * R3.visH;
+  const hW = (sp.h / H) * R3.visH;
+
+  const t = a.t;
+
+  /* ---------- 待机：呼吸频率 / 转身幅度 / 体态前倾都按性格来 ---------- */
+  const sway  = Math.sin(t * P.breath);
+  let yOff    = sway * 0.013 * hW * P.amp;
+  let rotZ    = Math.sin(t * 1.1) * 0.022 * P.amp;
+  let rotY    = Math.sin(t * 0.72) * P.rotY;
+  let rotX    = P.tilt + Math.sin(t * 1.5) * 0.02 * P.amp;
+  let scaleM  = 1;
+  let sx      = 1 - sway * 0.012 * P.amp;     // 呼吸挤压
+  let sy      = 1 + sway * 0.014 * P.amp;
+
+  // 往哪边走就往哪边倾，看起来像在"移动"而不是被拖动
+  const leanT = clamp((sp.tx - sp.x) / Math.max(sp.w * 0.8, 1), -1, 1);
+  a.lean = damp(a.lean, leanT, 9, dt);
+  rotZ -= a.lean * 0.13 * P.lean;
+  sx   += Math.abs(a.lean) * 0.05;            // 跑起来有点拉伸
+  sy   -= Math.abs(a.lean) * 0.03;
+
+  /* ---------- 接到星星：vv 装酷 / aa 热情 / dd 腼腆 ---------- */
+  if(a.hit > 0){
+    const e = 1 - a.hit / (a.hitMax || HIT_DUR);
+    const p = hitPose(persona, e);
+    yOff   += p.dy * hW;
+    rotX   += p.rotX;
+    rotY   += p.rotY;
+    rotZ   += p.rotZ;
+    sx     *= p.sx;
+    sy     *= p.sy;
+    scaleM *= p.scale;
+  }
+
+  /* ---------- 被炸：三个性格三套反应 ---------- */
+  if(a.hurt > 0){
+    const q = hurtPose(persona, 1 - a.hurt / (a.hurtMax || HURT_DUR));
+    yOff   += q.dy * hW;
+    rotX   += q.rotX;
+    rotY   += q.rotY;
+    rotZ   += q.rotZ;
+    sx     *= q.sx;
+    sy     *= q.sy;
+    scaleM *= q.scale;
+  }
+
+  if(sp.mood === 'sad'){
+    yOff   -= a.sink * 0.05 * hW;
+    scaleM -= a.sink * 0.055;
+    sy     -= a.sink * 0.06;
+  }
+
+  if(G.stun > 0){
+    const k = clamp(G.stun / CONFIG.stunDuration, 0, 1);
+    const sa = P.stun;
+    rotZ += Math.sin(t * 31) * 0.17 * k * sa;
+    yOff += Math.sin(t * 44) * 0.011 * hW * k * sa;
+    rotY += Math.sin(t * 13) * 0.40 * k * sa;
+  }
+
+  R3.group.position.set(wx, wy + yOff, 0);
+  R3.group.rotation.set(rotX, rotY, rotZ);
+  R3.group.scale.set(hW * scaleM * sx, hW * scaleM * sy, hW * scaleM * (sx + sy) * 0.5);
+
+  R3.renderer.render(R3.scene, R3.camera);
+}
+
+/* 探索：vv 仰面躺在地上，前后滑着擦地。
+   模型是静态网格（没有骨骼），所以"手上下滑动"用整个人在地面上推拉来表达：
+   推出去慢、收回来稍快，推到底时身体轻轻一沉 —— 读起来就是在使劲蹭。 */
+function syncExploreShow(dt){
+  const a = R3.anim;
+  a.t += dt;
+  const t = a.t;
+
+  const ph   = (t / EXPLORE.period) * Math.PI * 2;
+  const push = Math.sin(ph);            // -1..1 前后
+  const ease = Math.sin(ph - 0.5);      // 错开一点，推出去时更"用力"
+
+  R3.group.position.set(
+    0,
+    0.012 + Math.max(0, ease) * 0.010,  // 贴着地，回收时抬一点点
+    ease * EXPLORE.travel
+  );
+  R3.group.rotation.set(
+    EXPLORE.rotX + Math.max(0, ease) * 0.05,   // 推的时候身体再往前压一点
+    push * 0.09,                               // 蹭的时候轻微拧一下
+    0
+  );
+  /* 推的那一下往地里压一点：局部 Z 是脸的朝向，躺下之后就是"上下"，
+     压它等于把身体按在地面上，蹭的力气就出来了 */
+  const press = Math.max(0, push);
+  R3.group.scale.set(EXPLORE.scale * (1 + press * 0.03),
+                     EXPLORE.scale * (1 + press * 0.02),
+                     EXPLORE.scale * (1 - press * 0.12));
+
+  // 影子跟着人走，位置略后方一点
+  if(R3.shadow){
+    R3.shadow.position.set(0, 0.002, ease * EXPLORE.travel * 0.9);
+  }
+
+  R3.renderer.render(R3.scene, R3.camera);
+}
+
+const HIT_DUR  = 0.62;   // 接到星星的整套动作时长（默认，按性格会变）
+const HURT_DUR = 0.42;   // 被炸到后的压缩回弹时长
+
+/* 被炸到的动作包络：e 从 0 → 1。三个性格反应完全不同 ——
+   cool 硬撑不躲 / warm 被弹飞 / shy 缩成一团 */
+function hurtPose(persona, e){
+  const k = Math.sin(e * Math.PI);                 // 0→1→0
+  const shake = Math.sin(e * Math.PI * 5) * (1 - e * 0.55);
+
+  if(persona === 'cool'){
+    /* 装酷：几乎不动，只是身体一沉、抬下巴、把脸别开 */
+    return {
+      dy: -k * 0.012,
+      rotX: -k * 0.09,
+      rotY: k * 0.17,
+      rotZ: shake * 0.030,
+      sx: 1 + k * 0.012,
+      sy: 1 - k * 0.018,
+      scale: 1 - k * 0.008,
+    };
+  }
+  if(persona === 'shy'){
+    /* 腼腆：缩起来、低头，小幅高频抖，不敢看 */
+    return {
+      dy: -k * 0.040,
+      rotX: k * 0.24,
+      rotY: shake * 0.10,
+      rotZ: shake * 0.085,
+      sx: 1 + k * 0.065,
+      sy: 1 - k * 0.105,
+      scale: 1 - k * 0.090,
+    };
+  }
+  /* 热情：整个人被弹起一截，落回来还要晃两下 */
+  return {
+    dy: k * 0.150,
+    rotX: k * 0.30,
+    rotY: shake * 0.28,
+    rotZ: shake * 0.20,
+    sx: 1 + k * 0.090,
+    sy: 1 - k * 0.150,
+    scale: 1 - k * 0.050,
+  };
+}
+
+/* 动作时长也跟着性格走：装酷慢悠悠、腼腆只缩一下、热情一蹦到底 */
+function hitDurFor(persona){
+  if(persona === 'cool') return 0.82;
+  if(persona === 'shy')  return 0.54;
+  return 0.62;
+}
+
+function hurtDurFor(persona){
+  if(persona === 'cool') return 0.95;
+  if(persona === 'shy')  return 0.62;
+  return 0.80;
+}
+
+/* three 还没加载完时先记下来，加载完再补 */
+let pendingChar = null;
+function preloadModel(key){
+  if(!R3.ok){ pendingChar = key; return; }
+  if(modelCache[key]){ applyModel(key); return; }
+  loadModel(key);
+}
+
+/* =========================================================================
+   4. 音效
+   ========================================================================= */
+let AC = null;
+function ensureAudio(){
+  if(!AC){
+    try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ AC = null; }
+  }
+  if(AC && AC.state === 'suspended') AC.resume();
+}
+function tone(o){
+  if(!AC) return;
+  const { freq=440, to=null, dur=.12, type='sine', gain=.06, delay=0 } = o || {};
+  const t0 = AC.currentTime + delay;
+  const osc = AC.createOscillator(), g = AC.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if(to) osc.frequency.exponentialRampToValueAtTime(Math.max(20, to), t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g).connect(AC.destination);
+  osc.start(t0); osc.stop(t0 + dur + 0.02);
+}
+function noiseBurst(dur=.3, gain=.12){
+  if(!AC) return;
+  const n = Math.floor(AC.sampleRate * dur);
+  const buf = AC.createBuffer(1, n, AC.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i=0;i<n;i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/n, 2.4);
+  const src = AC.createBufferSource(); src.buffer = buf;
+  const flt = AC.createBiquadFilter(); flt.type='lowpass'; flt.frequency.value = 1100;
+  const g = AC.createGain(); g.gain.value = gain;
+  src.connect(flt).connect(g).connect(AC.destination);
+  src.start();
+}
+const SFX = {
+  catchStar(){ tone({freq:880,to:1320,dur:.13,gain:.065}); tone({freq:1320,to:1760,dur:.11,gain:.05,delay:.055}); },
+  bomb(){ noiseBurst(.34,.16); tone({freq:150,to:48,dur:.32,type:'sawtooth',gain:.09}); },
+  miss(){ tone({freq:300,to:170,dur:.16,type:'triangle',gain:.05}); },
+  lock(){ tone({freq:660,dur:.12,gain:.06}); tone({freq:990,dur:.18,gain:.06,delay:.10}); tone({freq:1320,dur:.28,gain:.05,delay:.22}); },
+  win(){ [523,659,784,1046].forEach((f,i)=>tone({freq:f,dur:.5,gain:.05,delay:i*.09,type:'triangle'})); },
+  shutter(){ noiseBurst(.06,.10); tone({freq:1600,to:900,dur:.07,gain:.05,type:'square'}); },
+};
+
+/* =========================================================================
+   5. 生成
+   ========================================================================= */
+const progress = () => clamp(G.spawned / CONFIG.starTotal, 0, 1);
+const starFallTime = () => lerp(CONFIG.starFallFrom, CONFIG.starFallTo, progress());
+const bombFallTime = () => lerp(CONFIG.bombFallFrom, CONFIG.bombFallTo, progress());
+
+function spawnStar(){
+  const r = 21 * S;
+  const margin = r + 26 * S;
+  const x = rand(margin, W - margin);
+  G.items.push({
+    kind:'star', x, y:-r, r,
+    vy: (groundY + r) / starFallTime(),
+    rot: rand(0, Math.PI*2), vr: rand(-2.4, 2.4), born:0,
+  });
+  if(G.spawned >= CONFIG.bombStartAfterStar){
+    G.nextBombIn = Math.min(G.nextBombIn, rand(CONFIG.bombDelayMin, CONFIG.bombDelayMax));
+    G.bombArmed = true;
+  }
+}
+
+function spawnBomb(){
+  const r = 19 * S;
+  const margin = r + 26 * S;
+  let x = null;
+
+  if(G.bombArmed && Math.random() < CONFIG.bombBesideChance){
+    let ref = null;
+    for(let i = G.items.length - 1; i >= 0; i--){
+      if(G.items[i].kind === 'star'){ ref = G.items[i]; break; }
+    }
+    if(ref){
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const off  = rand(CONFIG.bombBesideMin, CONFIG.bombBesideMax) * S;
+      x = ref.x + side * off;
+    }
+  }
+  if(x === null || x < margin || x > W - margin){
+    // 兜底随机也要避开星星，别正好叠在星星身上变成躲不掉的必死位
+    let tries = 0;
+    do{
+      x = rand(margin, W - margin);
+      tries++;
+    } while(tries < 8 && G.items.some(it => it.kind === 'star' && Math.abs(it.x - x) < (it.r + r) * 1.15));
+  }
+  G.bombArmed = false;
+
+  G.items.push({
+    kind:'bomb', x, y:-r, r,
+    vy: (groundY + r) / bombFallTime(),
+    rot: rand(0, Math.PI*2), vr: rand(-1.4, 1.4), born:0,
+  });
+}
+
+/* =========================================================================
+   6. 粒子
+   ========================================================================= */
+function burst(x, y, color, count, power){
+  for(let i=0;i<count;i++){
+    const a = rand(0, Math.PI*2), sp = rand(power*.35, power);
+    G.particles.push({
+      x, y,
+      vx: Math.cos(a)*sp, vy: Math.sin(a)*sp - power*.35,
+      life: rand(.4,.85), max:.85,
+      r: rand(1.8,4.6)*S, color,
+    });
+  }
+}
+function ripple(x, y, color){
+  G.ripples.push({ x, y, r:6*S, max:34*S, life:.5, maxLife:.5, color });
+}
+
+/* =========================================================================
+   7. 输入
+   ========================================================================= */
+const input = { dragging: false, offset: 0, keys: {} };
+
+function pointerPos(e){
+  const rect = cvs.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+}
+function moveTo(x){
+  const sp = G.sprite;
+  sp.tx = clamp(x, sp.w*0.5 + 6*S, W - sp.w*0.5 - 6*S);
+}
+
+cvs.addEventListener('pointerdown', e => {
+  if(G.state !== 'playing') return;
+  e.preventDefault();
+  ensureAudio();
+  input.dragging = true;
+  try { cvs.setPointerCapture(e.pointerId); } catch(err){}
+
+  const p = pointerPos(e), sp = G.sprite;
+  const onSprite = Math.abs(p.x - sp.x) < sp.w*0.55 &&
+                   p.y > sp.y - sp.h*1.15 && p.y < sp.y + sp.h*0.35;
+  input.offset = onSprite ? (p.x - sp.tx) : 0;
+  moveTo(p.x - input.offset);
+});
+
+cvs.addEventListener('pointermove', e => {
+  if(!input.dragging) return;
+  e.preventDefault();
+  moveTo(pointerPos(e).x - input.offset);
+});
+
+function endDrag(){ input.dragging = false; }
+cvs.addEventListener('pointerup', endDrag);
+cvs.addEventListener('pointercancel', endDrag);
+
+window.addEventListener('keydown', e => { input.keys[e.key] = true; });
+window.addEventListener('keyup',   e => { input.keys[e.key] = false; });
+
+function updateKeys(dt){
+  const k = input.keys;
+  const left  = k['ArrowLeft']  || k['a'] || k['A'];
+  const right = k['ArrowRight'] || k['d'] || k['D'];
+  if(!left && !right) return;
+  moveTo(G.sprite.tx + (right ? 1 : -1) * CONFIG.keySpeed * S * dt);
+}
+
+/* =========================================================================
+   8. 更新
+   ========================================================================= */
+function setMood(m, dur){
+  G.sprite.mood = m;
+  G.sprite.moodT = dur;
+  if(m === 'happy'){ ANIM.bounce = 1; R3.anim.bounce = 1; }
+  if(m === 'sad'){   ANIM.sink   = 1; R3.anim.sink   = 1; }
+}
+
+function updateSprite(dt){
+  const sp = G.sprite;
+  if(G.stun > 0){
+    G.stun -= dt;
+    sp.mood = 'stun';
+    sp.moodT = 0;
+    if(G.stun <= 0) tipEl.textContent = '眩晕结束，继续接星星';
+  } else {
+    updateKeys(dt);
+    sp.x = lerp(sp.x, sp.tx, 1 - Math.exp(-CONFIG.followStiffness * dt));
+    if(sp.moodT > 0){
+      sp.moodT -= dt;
+      if(sp.moodT <= 0) sp.mood = 'idle';
+    } else {
+      sp.mood = 'idle';
+    }
+  }
+}
+
+/* 接触面：只取身体中段一块。原来是 0.88×0.98，几乎整个包围盒都算命中，
+   看着还离得挺远就吃到了 —— 现在按 catchBoxW/H 收窄，底边依然贴住脚底 */
+function hitSprite(it){
+  const sp = G.sprite;
+  const rw = sp.w * CONFIG.catchBoxW;
+  const rh = sp.h * CONFIG.catchBoxH;
+  const rx = sp.x - rw * 0.5;
+  const ry = sp.y - rh * 0.96;
+  const nx = clamp(it.x, rx, rx + rw);
+  const ny = clamp(it.y, ry, ry + rh);
+  const dx = it.x - nx, dy = it.y - ny;
+  return (dx*dx + dy*dy) < Math.pow(it.r * CONFIG.catchTolerance, 2);
+}
+
+function updateItems(dt){
+  for(let i = G.items.length - 1; i >= 0; i--){
+    const it = G.items[i];
+    it.born += dt;
+    it.y += it.vy * dt;
+    it.rot += it.vr * dt;
+
+    if(it.y - it.r > groundY + 30*S){ G.items.splice(i,1); continue; }
+
+    if(hitSprite(it)){
+      G.items.splice(i,1);
+      if(it.kind === 'star') onCatch(it); else onBomb(it);
+      continue;
+    }
+
+    if(it.y > groundY - it.r*0.2){
+      if(it.kind === 'star'){
+        onMiss(it);
+        G.items.splice(i,1);
       }
-    </script>
-    <main id="app">
-      <div id="ar-container" aria-label="AR 摄像头画面"></div>
-      <section class="panel" aria-live="polite">
-        <p id="status" class="status" data-state="idle"><span class="status-dot"></span><span id="status-text">准备中</span></p>
-        <p id="lost-hint" class="lost-hint" hidden>目标丢失，请重新对准学院标志</p>
-        <div class="actions">
-          <button id="start-button" type="button">启动 AR</button>
-          <button id="stop-button" class="secondary" type="button" hidden>停止 AR</button>
-        </div>
-      </section>
-      <button id="photo-button" class="photo-cta" type="button" hidden>去合影</button>
-      <details class="debug" hidden>
-        <summary>调试信息</summary>
-        <dl>
-          <div><dt>初始化</dt><dd id="debug-init">未启动</dd></div>
-          <div><dt>识别目标</dt><dd id="debug-target">否</dd></div>
-          <div><dt>角色可见</dt><dd id="debug-model">否</dd></div>
-          <div><dt>错误</dt><dd id="debug-error">无</dd></div>
-        </dl>
-      </details>
-    </main>
-  </body>
+    }
+  }
+}
+
+function onCatch(it){
+  G.score++; G.resolved++;
+  const persona = (CHARS[G.char] || CHARS.v).persona;
+  const dur = hitDurFor(persona);
+
+  setMood('happy', dur + 0.12);
+  R3.anim.hitMax = dur;
+  R3.anim.hit = dur;
+  showFace('catch');               // 表情亮一下，自己会淡出
+
+  burst(it.x, it.y, '#FFC24A', 16, 260*S);
+  burst(it.x, it.y, '#FFF3C4', 8, 180*S);
+  /* 热情的角色多冒一撮粉色小心心，情绪更外放 */
+  if(persona === 'warm') burst(it.x, it.y, '#FF6B8A', 10, 210*S);
+  ripple(it.x, groundY, 'rgba(255,194,74,.9)');
+  SFX.catchStar();
+  renderSlots();
+  if(G.score === 1) tipEl.textContent = '接得漂亮，继续';
+  if(G.score === 3) tipEl.textContent = '还差 ' + (CONFIG.starTotal - G.score) + ' 颗';
+}
+
+function onBomb(it){
+  G.hits++;
+  G.stun = CONFIG.stunDuration;
+  G.shake = Math.max(G.shake, 1);
+  const persona = (CHARS[G.char] || CHARS.v).persona;
+  const hd = hurtDurFor(persona);
+  setMood('stun', CONFIG.stunDuration);
+  R3.anim.hurtMax = hd;
+  R3.anim.hurt = hd;
+  showFace('hurt', CONFIG.stunDuration * 0.9);   // 被炸的表情亮着，等眩晕快结束再淡出
+
+  /* 被炸扣一颗已得到的星星；一颗都没有时不加不减 */
+  const lost = G.score > 0;
+  if(lost){ G.score--; renderSlots(); }
+
+  burst(it.x, it.y, '#FF7A45', 22, 340*S);
+  burst(it.x, it.y, '#5A4A3A', 12, 200*S);
+  ripple(it.x, groundY, 'rgba(255,122,69,.9)');
+  SFX.bomb();
+  tipEl.textContent = lost ? '被炸到，掉了一颗星星' : '被炸晕了，等一下';
+}
+
+function onMiss(it){
+  G.resolved++;
+  setMood('sad', 0.85);
+  ripple(it.x, groundY, 'rgba(255,255,255,.5)');
+  SFX.miss();
+  renderSlots();
+}
+
+function updateParticles(dt){
+  for(let i = G.particles.length - 1; i >= 0; i--){
+    const p = G.particles[i];
+    p.life -= dt;
+    if(p.life <= 0){ G.particles.splice(i,1); continue; }
+    p.vy += 900 * S * dt;
+    p.vx *= (1 - 1.6*dt);
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+  for(let i = G.ripples.length - 1; i >= 0; i--){
+    const r = G.ripples[i];
+    r.life -= dt;
+    if(r.life <= 0){ G.ripples.splice(i,1); continue; }
+    r.r = lerp(r.r, r.max, 1 - Math.exp(-7*dt));
+  }
+}
+
+function updateTimers(dt){
+  G.t += dt;
+
+  if(G.spawned < CONFIG.starTotal){
+    G.nextStarIn -= dt;
+    if(G.nextStarIn <= 0){
+      spawnStar();
+      G.spawned++;
+      const gap = lerp(CONFIG.starGapFrom, CONFIG.starGapTo, progress()) + rand(-1,1)*CONFIG.starGapJitter;
+      G.nextStarIn = Math.max(1.2, gap);
+    }
+  }
+
+  if(G.spawned >= CONFIG.bombStartAfterStar){
+    G.nextBombIn -= dt;
+    if(G.nextBombIn <= 0){
+      spawnBomb();
+      const gap = lerp(CONFIG.bombGapFrom, CONFIG.bombGapTo, progress()) + rand(-1,1)*CONFIG.bombGapJitter;
+      G.nextBombIn = Math.max(1.0, gap);
+    }
+  }
+
+  if(G.resolved >= CONFIG.starTotal){
+    const inAir = G.items.some(it => it.kind === 'star');
+    if(!inAir){
+      if(G.endDelay < 0) G.endDelay = 0.85;
+      G.endDelay -= dt;
+      if(G.endDelay <= 0 && G.state === 'playing') gameOver();
+    }
+  }
+}
+
+/* =========================================================================
+   9. 绘制
+   ========================================================================= */
+function roundRect(c,x,y,w,h,r){
+  r = Math.min(r, w*0.5, h*0.5);
+  c.beginPath();
+  c.moveTo(x+r,y);
+  c.arcTo(x+w,y,x+w,y+h,r);
+  c.arcTo(x+w,y+h,x,y+h,r);
+  c.arcTo(x,y+h,x,y,r);
+  c.arcTo(x,y,x+w,y,r);
+  c.closePath();
+}
+
+function starPath(c,cx,cy,R,inner,rot){
+  c.beginPath();
+  for(let i = 0; i < 10; i++){
+    const a = rot + i * Math.PI / 5 - Math.PI / 2;
+    const rr = (i % 2) ? inner : R;
+    const px = cx + Math.cos(a) * rr;
+    const py = cy + Math.sin(a) * rr;
+    if(i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+  }
+  c.closePath();
+}
+
+function drawGround(){
+  const g = ctx.createRadialGradient(G.sprite.x, groundY + 6*S, 8*S, G.sprite.x, groundY + 6*S, W*0.52);
+  g.addColorStop(0, 'rgba(255,225,190,.34)');
+  g.addColorStop(.45, 'rgba(255,215,175,.12)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, groundY - 60*S, W, H - groundY + 60*S);
+}
+
+function drawItem(it){
+  const t = clamp(1 - (groundY - it.y)/(H*0.75), 0.18, 1);
+  ctx.save();
+  ctx.globalAlpha = 0.16 * t;
+  ctx.fillStyle = '#2A2018';
+  ctx.beginPath();
+  ctx.ellipse(it.x, groundY + 4*S, it.r*(0.55 + t*0.5), it.r*(0.16 + t*0.14), 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  const pop = it.born < 0.22 ? it.born/0.22 : 1;
+
+  if(it.kind === 'star'){
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    ctx.scale(pop,pop);
+    ctx.rotate(it.rot);
+
+    const glow = ctx.createRadialGradient(0,0,it.r*.3, 0,0,it.r*2.1);
+    glow.addColorStop(0,'rgba(255,200,80,.55)');
+    glow.addColorStop(1,'rgba(255,200,80,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0,0,it.r*2.1,0,Math.PI*2); ctx.fill();
+
+    const grd = ctx.createLinearGradient(0,-it.r,0,it.r);
+    grd.addColorStop(0,'#FFE9A8');
+    grd.addColorStop(.5,'#FFC24A');
+    grd.addColorStop(1,'#FF8A2B');
+    starPath(ctx,0,0,it.r,it.r*0.46,0);
+    ctx.fillStyle = grd; ctx.fill();
+    ctx.lineWidth = 1.4*S;
+    ctx.strokeStyle = 'rgba(255,255,255,.75)';
+    ctx.stroke();
+
+    ctx.globalAlpha = .8;
+    ctx.fillStyle = 'rgba(255,255,255,.8)';
+    ctx.beginPath();
+    ctx.ellipse(-it.r*.22,-it.r*.3, it.r*.16, it.r*.1, -.6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.translate(it.x, it.y);
+    ctx.scale(pop,pop);
+
+    const pulse = 0.5 + 0.5*Math.sin(it.born*9);
+    const glow = ctx.createRadialGradient(0,0,it.r*.4, 0,0,it.r*2);
+    glow.addColorStop(0, 'rgba(255,90,60,' + (0.22 + pulse*0.18) + ')');
+    glow.addColorStop(1, 'rgba(255,90,60,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(0,0,it.r*2,0,Math.PI*2); ctx.fill();
+
+    ctx.rotate(it.rot*.25);
+    const grd = ctx.createRadialGradient(-it.r*.3,-it.r*.35,it.r*.1, 0,0,it.r*1.15);
+    grd.addColorStop(0,'#5C5566');
+    grd.addColorStop(.55,'#2A2431');
+    grd.addColorStop(1,'#14101B');
+    ctx.beginPath(); ctx.arc(0,0,it.r,0,Math.PI*2);
+    ctx.fillStyle = grd; ctx.fill();
+    ctx.lineWidth = 1.2*S;
+    ctx.strokeStyle = 'rgba(255,255,255,.22)';
+    ctx.stroke();
+
+    ctx.fillStyle = 'rgba(255,255,255,.3)';
+    ctx.beginPath();
+    ctx.ellipse(-it.r*.34,-it.r*.36, it.r*.2, it.r*.13, -.7, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(it.r*.34, -it.r*.86);
+    ctx.quadraticCurveTo(it.r*.92, -it.r*1.5, it.r*.5, -it.r*1.9);
+    ctx.lineWidth = 2.2*S;
+    ctx.strokeStyle = '#B08A5A';
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    const spr = it.r*(0.22 + pulse*0.16);
+    const sg = ctx.createRadialGradient(it.r*.5,-it.r*1.95,0, it.r*.5,-it.r*1.95,spr*3.4);
+    sg.addColorStop(0,'rgba(255,240,180,1)');
+    sg.addColorStop(.35,'rgba(255,140,60,.85)');
+    sg.addColorStop(1,'rgba(255,90,40,0)');
+    ctx.fillStyle = sg;
+    ctx.beginPath(); ctx.arc(it.r*.5,-it.r*1.95,spr*3.4,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+}
+
+/* 形象本体：3D 就绪时交给 three 渲染，这里只画地面阴影和平面兜底 */
+function drawSprite2D(){
+  const sp = G.sprite;
+  const w = sp.w, h = sp.h;
+  const top = sp.y - h;
+
+  ctx.save();
+  const shG = ctx.createRadialGradient(sp.x, sp.y + 7*S, 2, sp.x, sp.y + 7*S, w*0.48);
+  shG.addColorStop(0, 'rgba(30,22,16,.30)');
+  shG.addColorStop(1, 'rgba(30,22,16,0)');
+  ctx.fillStyle = shG;
+  ctx.beginPath();
+  ctx.ellipse(sp.x, sp.y + 7*S, w*0.48, w*0.13, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+
+  const img = CHAR_IMG[G.char];
+
+  // 3D 未就绪（或加载失败）时用平面图顶上，避免精灵消失
+  if(!R3.ready){
+    const t = ANIM.t;
+    const persona = (CHARS[G.char] || CHARS.v).persona;
+    const P = personaOf(G.char);
+    const sway = Math.sin(t * P.breath);
+    let dy  = sway * 0.013 * h * P.amp;
+    let scx = 1 - sway * 0.012 * P.amp;
+    let scy = 1 + sway * 0.014 * P.amp;
+    let rot = Math.sin(t * 1.1) * 0.016 * P.amp + P.tilt * 0.30;
+
+    const leanT = clamp((sp.tx - sp.x) / Math.max(sp.w * 0.8, 1), -1, 1);
+    R3.anim.lean = damp(R3.anim.lean, leanT, 9, 1/60);
+    rot -= R3.anim.lean * 0.13 * P.lean;
+
+    if(sp.mood === 'sad'){
+      dy  += ANIM.sink * 0.035 * h;
+      scx -= ANIM.sink * 0.05;
+      scy -= ANIM.sink * 0.06;
+    }
+    if(G.stun > 0){
+      const k = clamp(G.stun / CONFIG.stunDuration, 0, 1);
+      rot += Math.sin(t * 31) * 0.16 * k * P.stun;
+      dy  += Math.sin(t * 44) * 0.010 * h * k * P.stun;
+    }
+    // 接到星星：套和 3D 完全同一套包络，两套兜底视觉不会不一致
+    if(R3.anim.hit > 0){
+      const p = hitPose(persona, 1 - R3.anim.hit / (R3.anim.hitMax || HIT_DUR));
+      dy  -= p.dy * h;
+      scx *= p.sx;
+      scy *= p.sy;
+      rot += p.rotZ * 1.6;
+    }
+    // 被炸：和 3D 同一套性格包络
+    if(R3.anim.hurt > 0){
+      const q = hurtPose(persona, 1 - R3.anim.hurt / (R3.anim.hurtMax || HURT_DUR));
+      dy  -= q.dy * h;
+      scx *= q.sx;
+      scy *= q.sy;
+      rot += q.rotZ * 1.6;
+    }
+
+    ctx.save();
+    ctx.translate(sp.x, sp.y + dy);
+    ctx.rotate(rot);
+    ctx.scale(scx, scy);
+
+    if(img && img.complete && img.naturalWidth){
+      ctx.shadowColor = 'rgba(255,255,255,.55)';
+      ctx.shadowBlur = 16 * S;
+      ctx.drawImage(img, -w/2, -h, w, h);
+      ctx.shadowBlur = 0;
+      ctx.drawImage(img, -w/2, -h, w, h);
+    } else {
+      ctx.fillStyle = '#1A1512';
+      roundRect(ctx, -w/2, -h, w, h, w*0.28);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function drawParticles(){
+  G.ripples.forEach(r => {
+    const a = clamp(r.life / r.maxLife, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = a * .7;
+    ctx.strokeStyle = r.color;
+    ctx.lineWidth = 2.2*S*a;
+    ctx.beginPath();
+    ctx.ellipse(r.x, r.y, r.r*1.7, r.r*0.42, 0, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  });
+  G.particles.forEach(p => {
+    const a = clamp(p.life / p.max, 0, 1);
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r*(0.4 + a*0.8), 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  });
+}
+
+function render(){
+  ctx.clearRect(0, 0, W, H);
+
+  /* 实景统一画在画布最底层。不再依赖 <video> 的 object-fit —— 微信 / 部分安卓内核
+     对 video 的 object-fit 支持不一致，会把画面缩成中间一块、四周露出底色。
+     自己画就永远是整屏铺满，任何设备结果一致。
+     只有真正看得见实景的三个状态才画，白底页面不浪费这一笔。 */
+  const needBg = (G.state === 'scan' || G.state === 'playing' || G.state === 'capture'
+                  || G.state === 'plane' || G.state === 'exploreShow');
+  if(needBg) drawCamBg();
+
+  /* 拍照页：识脸步骤画那个圆圈，合照步骤把定格的脸贴到小人脖子上 */
+  if(G.state === 'capture'){
+    if(capStep === 'face') paintScan();
+    else paintFacePatch();
+  }
+
+  // 识别 / 选择 / 拍照 / 找平面 / 探索展示：只留实景，不画游戏元素
+  if(G.state === 'scan' || G.state === 'intro' || G.state === 'capture'
+     || G.state === 'plane' || G.state === 'exploreShow') return;
+  ctx.save();
+  if(G.shake > 0){
+    const m = G.shake * 12 * S;
+    ctx.translate((Math.random()-.5)*m, (Math.random()-.5)*m);
+  }
+  drawGround();
+  G.items.forEach(drawItem);
+  drawSprite2D();
+  drawParticles();
+  ctx.restore();
+}
+
+/* =========================================================================
+   10. 图像识别
+   ========================================================================= */
+const SCAN = { canvas:null, ctx:null, hits:0, timer:0, running:false };
+const SCAN_SIZE = 168;        // 检测画布边长（取景框内的画面按这个尺寸重采样）
+
+function initScan(){
+  SCAN.canvas = document.createElement('canvas');
+  SCAN.canvas.width  = SCAN_SIZE;
+  SCAN.canvas.height = SCAN_SIZE;
+  SCAN.ctx = SCAN.canvas.getContext('2d', { willReadFrequently: true });
+}
+
+/* 取景框对应的视频源矩形（把 object-fit: cover 的裁切反算回去） */
+function frameSourceRect(){
+  const v = camEl;
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const sc = Math.max(W / vw, H / vh);
+  const sw = W / sc, sh = H / sc;         // 视频中实际可见部分的宽高（视频像素）
+  const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
+  const kx = sw / W, ky = sh / H;         // 屏幕像素 → 视频像素
+
+  const r = scanFrameEl.getBoundingClientRect();
+  let fw = Math.max(12, r.width * kx);
+  let fh = Math.max(12, r.height * ky);
+  let vx = sx + r.left * kx;
+  let vy = sy + r.top * ky;
+
+  if(vx < 0){ fw += vx; vx = 0; }
+  if(vy < 0){ fh += vy; vy = 0; }
+  if(vx + fw > vw) fw = vw - vx;
+  if(vy + fh > vh) fh = vh - vy;
+  return { vx, vy, fw: Math.max(12, fw), fh: Math.max(12, fh) };
+}
+
+/* 抓一帧"取景框里实际可见的画面"，按固定边长重采样 */
+function grabFrame(){
+  const v = camEl;
+  if(!v || v.readyState < 2 || !v.videoWidth || !v.videoHeight) return false;
+
+  if(SCAN.canvas.width !== SCAN_SIZE || SCAN.canvas.height !== SCAN_SIZE){
+    SCAN.canvas.width = SCAN_SIZE;
+    SCAN.canvas.height = SCAN_SIZE;
+  }
+  const { vx, vy, fw, fh } = frameSourceRect();
+  SCAN.ctx.drawImage(v, vx, vy, fw, fh, 0, 0, SCAN_SIZE, SCAN_SIZE);
+  return true;
+}
+
+/* 把当前帧压成一张"暗块掩膜"：自适应阈值 + 面积粗筛。
+   三图形识别和水滴识别共用这一层，避免两套阈值各算各的。 */
+function buildDarkMask(){
+  const S = SCAN_SIZE, total = S * S;
+  const img = SCAN.ctx.getImageData(0, 0, S, S).data;
+
+  /* 亮度直方图，用自适应阈值代替写死的绝对黑度 */
+  const lum  = new Uint8Array(total);
+  const hist = new Uint32Array(256);
+  for(let i = 0; i < total; i++){
+    const si = i * 4;
+    const L = (0.299*img[si] + 0.587*img[si+1] + 0.114*img[si+2]) | 0;
+    lum[i] = L;
+    hist[L]++;
+  }
+  const quantile = q => {
+    let acc = 0;
+    const need = total * q;
+    for(let v = 0; v < 256; v++){ acc += hist[v]; if(acc >= need) return v; }
+    return 255;
+  };
+  const dark0  = quantile(0.015);     // 暗部参考
+  const bright = quantile(0.90);      // 亮部参考
+  const contrast = bright - dark0;
+
+  if(contrast < CONFIG.scanMinContrast){
+    return { ok:false, mask:null, darkPct:0, contrast, th:0 };
+  }
+
+  const th = clamp(
+    Math.round(dark0 + contrast * CONFIG.scanThresholdRatio),
+    CONFIG.scanMinLum, CONFIG.scanMaxLum
+  );
+
+  const mask = new Uint8Array(total);
+  let darkCount = 0;
+  for(let i = 0; i < total; i++){
+    if(lum[i] < th){ mask[i] = 1; darkCount++; }
+  }
+
+  const darkPct = darkCount / total * 100;
+  if(darkCount < CONFIG.scanMinCount || darkPct > CONFIG.scanMaxAreaPct){
+    return { ok:false, mask:null, darkPct, contrast, th };
+  }
+  return { ok:true, mask, darkPct, contrast, th };
+}
+
+function analyzeMarker(){
+  const m = buildDarkMask();
+  if(!m.ok) return { ok:false, found:0, darkPct:m.darkPct, contrast:m.contrast, th:m.th, why:'' };
+
+  const S = SCAN_SIZE, total = S * S;
+  const mask = m.mask, darkPct = m.darkPct, contrast = m.contrast, th = m.th;
+
+  /* ---- 2. 连通域，宽松几何筛 ---- */
+  const visited = new Uint8Array(total);
+  const stack = new Int32Array(total);
+  const cands = [];
+
+  for(let i = 0; i < total; i++){
+    if(!mask[i] || visited[i]) continue;
+
+    let sp = 0;
+    stack[sp++] = i;
+    visited[i] = 1;
+    let count = 0;
+    let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1;
+
+    while(sp > 0){
+      const p = stack[--sp];
+      const px = p % S, py = (p - px) / S;
+      count++;
+      if(px < minX) minX = px;
+      if(px > maxX) maxX = px;
+      if(py < minY) minY = py;
+      if(py > maxY) maxY = py;
+
+      if(px > 0){ const q = p - 1; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(px < S-1){ const q = p + 1; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(py > 0){ const q = p - S; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(py < S-1){ const q = p + S; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+    }
+
+    if(count < CONFIG.scanMinCount) continue;
+
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    const ar = bw / bh;
+    const fill = count / (bw * bh);
+    const areaPct = count / total * 100;
+
+    if(bw < CONFIG.scanMinSide || bh < CONFIG.scanMinSide) continue;
+    if(ar < 0.42 || ar > 2.6) continue;
+    if(fill < CONFIG.scanMinFill) continue;
+    if(areaPct < CONFIG.scanMinAreaPct) continue;
+
+    // 整幅都被判定为暗块 → 多半是把镜头挡住了，不算图形
+    if(bw > S * 0.97 && bh > S * 0.97) continue;
+
+    cands.push({ areaPct, ar, fill, w: bw, h: bh, cx:(minX + maxX)/2, cy:(minY + maxY)/2 });
+  }
+
+  /* ---- 3. 必须同时凑齐 scanRequired 个"尺寸相近、排成一行"的图形 ---- */
+  SCAN.lastCands = cands;
+  const need = CONFIG.scanRequired;
+  if(cands.length < need){
+    return { ok:false, found:cands.length, need, darkPct, contrast, th, why:'' };
+  }
+
+  // 候选太多时只留最大的几个，避免组合爆炸
+  const pool = cands.slice().sort((a, b) => b.areaPct - a.areaPct).slice(0, 8);
+
+  const groupOK = g => {
+    const areas = g.map(c => c.areaPct);
+    if(Math.max(...areas) / Math.min(...areas) > CONFIG.scanSizeRatio) return false;
+
+    // 三个图形可以横排（正常）也可以竖排（手机转 90°），两种都接受
+    const layoutOK = horizontal => {
+      const cross = horizontal ? 'cy' : 'cx';    // 需要对齐的方向
+      const along = horizontal ? 'cx' : 'cy';    // 需要分开的方向
+      const crossSize = horizontal ? 'h' : 'w';  // 判断对齐用的边
+      const alongSize = horizontal ? 'w' : 'h';  // 判断间隙用的边
+
+      const avg  = g.reduce((s, c) => s + c[crossSize], 0) / g.length;
+      const vals = g.map(c => c[cross]);
+      if(Math.max(...vals) - Math.min(...vals) > avg * CONFIG.scanAlignTol) return false;
+
+      const seq = g.slice().sort((a, b) => a[along] - b[along]);
+      for(let i = 1; i < seq.length; i++){
+        const gap = seq[i][along] - seq[i-1][along];
+        if(gap < (seq[i][alongSize] + seq[i-1][alongSize]) * 0.5 * 0.85) return false;  // 两个块不能粘在一起
+      }
+      return true;
+    };
+
+    return layoutOK(true) || layoutOK(false);
+  };
+
+  let ok = false;
+  const pick = [];
+  const dfs = (start, depth) => {
+    if(ok) return;
+    if(depth === need){
+      if(groupOK(pick.map(i => pool[i]))) ok = true;
+      return;
+    }
+    for(let i = start; i < pool.length; i++){
+      pick.push(i);
+      dfs(i + 1, depth + 1);
+      pick.pop();
+      if(ok) return;
+    }
+  };
+  dfs(0, 0);
+
+  if(!ok){
+    return { ok:false, found:cands.length, need, darkPct, contrast, th, why:'' };
+  }
+
+  return { ok:true, found:cands.length, need, darkPct, contrast, th,
+           why:'已看到 ' + need + ' 个图形' };
+}
+
+/* 水滴图形（上圆下尖）：探索阶段的入场券，认一个就够。
+   判据全放在"宽度剖面"上 —— 上段圆、中段最宽、下段收成一个尖。
+   圆形的底部还有 0.7 倍宽，三角形顶部只有 0.2 倍宽，两头都会被挡掉。 */
+function analyzeDrop(){
+  const m = buildDarkMask();
+  if(!m.ok) return { ok:false, found:0, need:1, darkPct:m.darkPct, contrast:m.contrast, th:m.th, why:'' };
+
+  const S = SCAN_SIZE, total = S * S, mask = m.mask;
+  const visited = new Uint8Array(total);
+  const stack   = new Int32Array(total);
+  let best = null;
+
+  for(let i = 0; i < total; i++){
+    if(!mask[i] || visited[i]) continue;
+
+    let sp = 0; stack[sp++] = i; visited[i] = 1;
+    let count = 0, minX = 1e9, maxX = -1, minY = 1e9, maxY = -1;
+    const pts = [];
+
+    while(sp > 0){
+      const p  = stack[--sp];
+      const px = p % S, py = (p - px) / S;
+      count++; pts.push(p);
+      if(px < minX) minX = px;
+      if(px > maxX) maxX = px;
+      if(py < minY) minY = py;
+      if(py > maxY) maxY = py;
+
+      if(px > 0){   const q = p - 1; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(px < S-1){ const q = p + 1; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(py > 0){   const q = p - S; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+      if(py < S-1){ const q = p + S; if(mask[q] && !visited[q]){ visited[q]=1; stack[sp++]=q; } }
+    }
+
+    if(count < CONFIG.scanMinCount * 2) continue;
+
+    const bw = maxX - minX + 1, bh = maxY - minY + 1;
+    if(bw < CONFIG.scanMinSide || bh < CONFIG.scanMinSide) continue;
+    if(bw > S * 0.97 && bh > S * 0.97) continue;          // 挡住镜头
+
+    const ar   = bw / bh;
+    const fill = count / (bw * bh);
+    if(ar < 0.55 || ar > 1.15) continue;
+    if(fill < 0.45 || fill > 0.80) continue;
+
+    // 逐行像素数 → 宽度剖面
+    const rc = new Uint16Array(bh);
+    for(let k = 0; k < pts.length; k++){
+      const p  = pts[k];
+      const py = (p - (p % S)) / S;
+      rc[py - minY]++;
+    }
+    const at = t => rc[Math.min(bh - 1, Math.max(0, Math.round((bh - 1) * t)))];
+    const w10 = at(0.10), w50 = at(0.50), w85 = at(0.85);
+
+    if(w50 < bw * 0.70) continue;      // 中段要宽
+    if(w10 < w50 * 0.45) continue;     // 顶部是圆的，不是三角尖
+    if(w85 > w50 * 0.60) continue;     // 底部收成尖
+
+    if(!best || count > best.score) best = { score: count };
+  }
+
+  if(!best){
+    return { ok:false, found:0, need:1, darkPct:m.darkPct, contrast:m.contrast, th:m.th, why:'' };
+  }
+  return { ok:true, found:1, need:1, darkPct:m.darkPct, contrast:m.contrast, th:m.th,
+           why:'看到水滴图形' };
+}
+
+function updateScan(dt){
+  if(!SCAN.running) return;
+  SCAN.timer -= dt;
+  if(SCAN.timer > 0) return;
+  SCAN.timer = CONFIG.scanInterval;
+
+  if(!grabFrame()){
+    scanDbg.textContent = '等待摄像头…';
+    return;
+  }
+  /* 探索阶段找"水滴"，游戏阶段找"三个图形"，两套判据各自独立 */
+  const exploring = (G.phase === 'explore');
+  const r    = exploring ? analyzeDrop() : analyzeMarker();
+  const need = exploring ? 2 : CONFIG.scanNeed;      // 水滴确认两拍就够
+
+  if(r.ok){
+    SCAN.hits++;
+    if(SCAN.hits >= need){
+      SCAN.hits = need;
+      if(exploring) onDropFound(); else onScanSuccess();
+    }
+  } else {
+    SCAN.hits = Math.max(0, SCAN.hits - 1);
+  }
+
+  const debugOn = /[?&]debug=1/.test(location.search || '');
+  const dbgNeed = r.need || 3;
+  const seen = Math.min(r.found || 0, dbgNeed);
+
+  // 角标随识别进度变暖：不占版面，但能看出"快好了"
+  scanFrameEl.classList.toggle('warm', SCAN.hits > 0);
+
+  if(r.ok){
+    scanDbg.textContent = '识别到三个图形，马上开始';
+  } else if(debugOn){
+    scanDbg.textContent = '搜索中 · 看到 ' + seen + '/' + dbgNeed
+      + ' · 对比 ' + Math.round(r.contrast || 0) + ' · 阈值 ' + Math.round(r.th || 0)
+      + ' · 暗 ' + r.darkPct.toFixed(0) + '%';
+  } else if(seen === 0){
+    scanDbg.textContent = '把墙上三个图形一起放进框内';
+  } else {
+    scanDbg.textContent = '已看到 ' + seen + '/' + need + ' · 再退后一点让三个都进框';
+  }
+}
+
+function onScanSuccess(){
+  if(!SCAN.running) return;
+  SCAN.running = false;
+  scanFrameEl.classList.remove('warm');
+  SFX.lock();
+  scanDbg.textContent = '识别成功';
+  toast('识别成功');
+  setTimeout(() => { if(G.state === 'scan') showIntro(); }, 420);
+}
+
+/* =========================================================================
+   11. 摄像头
+   ========================================================================= */
+let camStream = null, camStarting = false;
+let camFacing = 'environment';   // 全局只有一路摄像头，拍照页翻镜头就是换这一路
+let camTouched = false;          // 用户手动切过镜头后，进拍照页就不再自动切前置
+
+/* 把摄像头画面按 cover 铺满整块画布。
+   不再依赖 <video> 的 object-fit：微信 / 部分安卓内核对 video 的 object-fit
+   支持不一致，会把画面缩成中间一块、四周露出底色（"只有中间一块有背景图"）。
+   自己画到 canvas 上，任何内核结果都一样。 */
+function drawCamBg(){
+  const v = camEl;
+  if(!v || !v.videoWidth || !v.videoHeight || v.readyState < 2) return false;
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const sc = Math.max(W / vw, H / vh);
+  const dw = vw * sc, dh = vh * sc;
+  const dx = (W - dw) / 2, dy = (H - dh) / 2;
+
+  if(camFacing === 'user'){
+    // 自拍视角：左右镜像，像照镜子一样自然
+    ctx.save();
+    ctx.translate(W, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(v, W - dx - dw, dy, dw, dh);
+    ctx.restore();
+  } else {
+    ctx.drawImage(v, dx, dy, dw, dh);
+  }
+  return true;
+}
+
+/* 让摄像头背景铺满全屏。切前后摄 / 切后台之后 <video> 可能被挂起，
+   这里重绑一遍流、强制一次布局，并等元数据真的就绪。 */
+async function ensureCamBg(){
+  if(!camStream) return false;
+  if(camEl.srcObject !== camStream) camEl.srcObject = camStream;
+  document.body.classList.add('cam-on');
+  arBtn.classList.add('on');
+
+  if(camEl.paused || camEl.ended){
+    try{ await camEl.play(); }catch(e){}
+  }
+
+  camEl.style.width  = '100%';
+  camEl.style.height = '100%';
+  void camEl.offsetWidth;             // 触发一次 reflow
+
+  if(!camEl.videoWidth){
+    await new Promise(resolve => {
+      let done = false;
+      const fin = () => { if(done) return; done = true; resolve(); };
+      camEl.addEventListener('loadedmetadata', fin, { once: true });
+      setTimeout(fin, 1200);
+    });
+  }
+  return true;
+}
+
+/* facing：'environment' 后摄 / 'user' 前摄 */
+async function openCam(facing){
+  if(camStarting) return !!camStream;
+
+  // 要求换镜头：先把旧流放掉，否则会一直沿用上一次的镜头
+  if(facing && facing !== camFacing && camStream){
+    closeCam();
+    await new Promise(r => setTimeout(r, 140));
+  }
+  if(facing) camFacing = facing;
+
+  if(camStream) return await ensureCamBg();
+
+  camStarting = true;
+  try{
+    const s = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: { ideal: camFacing },
+        width:{ ideal: 1280 }, height:{ ideal: 720 },
+      },
+      audio: false,
+    });
+    camStream = s;
+    /* ideal 不保证满足：设备只有一路镜头时浏览器会照样给流。
+       以 track 实际报的 facingMode 为准，镜像方向才不会反 */
+    try{
+      const st = s.getVideoTracks()[0] && s.getVideoTracks()[0].getSettings();
+      if(st && st.facingMode) camFacing = st.facingMode;
+    }catch(e){}
+    camEl.srcObject = s;
+    /* 先挂 cam-on 再 play：play() 被自动播放策略拒掉时也不会卡在空白底图上 */
+    document.body.classList.add('cam-on');
+    arBtn.classList.add('on');
+    try{ await camEl.play(); }catch(e){}
+    await ensureCamBg();
+    return true;
+  }catch(e){
+    camStream = null;
+    camEl.srcObject = null;
+    document.body.classList.remove('cam-on');
+    arBtn.classList.remove('on');
+    return false;
+  } finally {
+    camStarting = false;
+  }
+}
+function closeCam(){
+  if(camStream){
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+    camEl.srcObject = null;
+    document.body.classList.remove('cam-on');
+    arBtn.classList.remove('on');
+  }
+}
+
+/* 切换前后镜头：整条链只有一路流，换镜头就是关掉重开 */
+async function flipCamera(){
+  camTouched = true;                 // 用户自己选过镜头，之后进拍照页不再自动切前置
+  const next = camFacing === 'user' ? 'environment' : 'user';
+  closeCam();
+  await new Promise(r => setTimeout(r, 140));
+  const ok = await openCam(next);
+  if(!ok){
+    camFacing = next === 'user' ? 'environment' : 'user';
+    await openCam(camFacing);
+    toast('这台设备只有一个镜头');
+  }
+}
+
+/* =========================================================================
+   12. HUD
+   ========================================================================= */
+const STAR_SVG = '<svg viewBox="0 0 24 24"><path d="M12 2.6l2.9 5.9 6.5.95-4.7 4.58 1.11 6.47L12 17.55 6.19 20.5 7.3 14.03 2.6 9.45l6.5-.95z"/></svg>';
+
+function buildSlots(){
+  slotsEl.innerHTML = '';
+  for(let i = 0; i < CONFIG.starTotal; i++){
+    const d = document.createElement('div');
+    d.className = 'slot';
+    d.innerHTML = STAR_SVG;
+    slotsEl.appendChild(d);
+  }
+}
+function renderSlots(){
+  const nodes = slotsEl.children;
+  for(let i = 0; i < nodes.length; i++) nodes[i].classList.toggle('on', i < G.score);
+}
+
+/* =========================================================================
+   13. 流程
+   ========================================================================= */
+function resetGame(){
+  G.score = 0; G.hits = 0; G.spawned = 0; G.resolved = 0;
+  G.t = 0; G.stun = 0; G.shake = 0; G.endDelay = -1;
+  G.nextStarIn = CONFIG.firstStarDelay;
+  G.nextBombIn = CONFIG.bombGapFrom;
+  G.bombArmed = false;
+  G.items.length = 0;
+  G.particles.length = 0;
+  G.ripples.length = 0;
+  G.sprite.x = W/2; G.sprite.tx = W/2;
+  G.sprite.mood = 'idle'; G.sprite.moodT = 0;
+  ANIM.bounce = 0; ANIM.sink = 0;
+  R3.anim.bounce = 0; R3.anim.sink = 0; R3.anim.hit = 0; R3.anim.hurt = 0; R3.anim.lean = 0;
+  // 新一局从干净的脸开始：表情收起、原眼睛回来
+  Object.keys(modelCache).forEach(k => {
+    const m = modelCache[k];
+    setEyesVisible(k, true);
+    if(m.faces) Object.keys(m.faces).forEach(x => hideFaceMesh(m.faces[x]));
+  });
+  buildSlots(); renderSlots();
+  tipEl.textContent = '拖动屏幕移动小精灵';
+}
+
+/* 启动后一进来就是识别页 */
+async function bootScan(){
+  G.state = 'scan';
+  G.phase = 'play';
+  scanTipEl.classList.add('hide');
+  exploreBackEl.classList.remove('show');
+  scanEl.classList.remove('hide');
+  introEl.classList.add('hide');
+  resultEl.classList.add('hide');
+  shotEl.classList.add('hide');
+  capEl.classList.add('hide');
+  document.body.classList.remove('playing');
+  scanDbg.textContent = '';
+  SCAN.hits = 0;
+  scanFrameEl.classList.remove('warm');
+
+  /* 识别要用后摄的原始画面：前摄画面是镜像的，镜像后左右会反，
+     识别框和显示框就对不上了 */
+  const ok = await openCam('environment');
+  if(!ok){
+    scanDbg.textContent = '摄像头打不开（需要 https 或 localhost）';
+    camFailBtn.hidden = false;
+    toast('摄像头不可用，可以先直接体验');
+    return;
+  }
+  camFailBtn.hidden = true;
+  scanDbg.textContent = '';
+  SCAN.running = true;
+}
+
+/* =========================================================================
+   探索线：照片页「继续探索」→ 扫水滴 → 找平面 → vv 躺在地上擦地
+   ========================================================================= */
+const wait = ms => new Promise(r => setTimeout(r, ms));
+
+/* 模型没进缓存就等一下（loadModel 是异步的） */
+function ensureModel(key){
+  return new Promise(res => {
+    if(modelCache[key]){ applyModel(key); res(true); return; }
+    if(!R3.ok){ res(false); return; }
+    loadModel(key);
+    const t0 = Date.now();
+    const tick = () => {
+      if(modelCache[key]){ applyModel(key); res(true); return; }
+      if(Date.now() - t0 > 8000){ res(false); return; }
+      setTimeout(tick, 60);
+    };
+    tick();
+  });
+}
+
+/* 从照片页进探索：回到扫描页，但换成"找水滴"这套判据 */
+async function startExplore(){
+  ensureAudio();
+  shotEl.classList.add('hide');
+  capEl.classList.add('hide');
+  introEl.classList.add('hide');
+  resultEl.classList.add('hide');
+
+  G.phase = 'explore';
+  G.state = 'scan';
+  document.body.classList.remove('playing');
+
+  scanEl.classList.remove('hide');
+  scanTipEl.classList.remove('hide');
+  scanDbg.textContent = '';
+  SCAN.hits = 0;
+  scanFrameEl.classList.remove('warm');
+
+  if(!camStream || camFacing !== 'environment'){
+    const ok = await openCam('environment');
+    if(!ok) scanDbg.textContent = '摄像头打不开（需要 https 或 localhost）';
+  } else {
+    await ensureCamBg();
+  }
+  SCAN.running = true;
+}
+
+/* 扫到水滴 → 找平面。
+   浏览器里没有真正的平面检测（WebXR 在微信内核里用不了），
+   这两拍是"找平面"的过程全部：雷达转 → 锁定 → 人落上去。 */
+async function onDropFound(){
+  if(!SCAN.running) return;
+  SCAN.running = false;
+  SFX.lock();
+
+  G.state = 'plane';
+  scanFrameEl.classList.remove('warm');
+  scanEl.classList.add('hide');
+  planeHuntEl.classList.remove('hide');
+  planeHuntEl.classList.remove('lock');
+  planeHuntEl.querySelector('.phTitle').textContent = '正在寻找平面…';
+  planeHuntEl.querySelector('.phHint').textContent  = '把手机对着地面，稍微晃一晃';
+
+  await wait(1100);
+  if(G.state !== 'plane') return;
+  planeHuntEl.classList.add('lock');
+  planeHuntEl.querySelector('.phTitle').textContent = '平面已找到';
+  planeHuntEl.querySelector('.phHint').textContent  = 'vv 正在上面擦地…';
+
+  await wait(900);
+  if(G.state !== 'plane') return;
+  planeHuntEl.classList.add('hide');
+  startExploreShow();
+}
+
+/* 平面找到了：vv 躺上去擦地 */
+async function startExploreShow(){
+  scanEl.classList.add('hide');
+  scanTipEl.classList.add('hide');
+  if(planeHuntEl) planeHuntEl.classList.add('hide');
+  G.char = 'v';
+  G.state = 'exploreShow';
+  R3.anim.t = 0;
+  await ensureModel('v');
+  exploreBackEl.classList.add('show');
+}
+
+/* 返回扫描：还是探索模式，可以再扫一次 */
+function exitExplore(){
+  G.state = 'scan';
+  exploreBackEl.classList.remove('show');
+  if(R3.plane) R3.plane.visible = false;
+  scanEl.classList.remove('hide');
+  scanTipEl.classList.remove('hide');
+  SCAN.hits = 0;
+  SCAN.running = true;
+}
+
+/* 扫描成功 → 挑选角色页 */
+function showIntro(){
+  G.state = 'intro';
+  SCAN.running = false;
+  scanEl.classList.add('hide');
+  resultEl.classList.add('hide');
+  shotEl.classList.add('hide');
+  capEl.classList.add('hide');
+  introEl.classList.remove('hide');
+  document.body.classList.remove('playing');
+
+  // 从结算页点「更换形象」回来时，把当前角色高亮对上
+  document.querySelectorAll('.pick').forEach(o => {
+    o.classList.toggle('sel', o.dataset.char === G.char);
+  });
+
+  // 选择页就开始拉模型，进游戏时已就绪
+  preloadModel(G.char);
+}
+
+async function enterGame(){
+  SCAN.running = false;
+  scanEl.classList.add('hide');
+  introEl.classList.add('hide');
+  resultEl.classList.add('hide');
+  shotEl.classList.add('hide');
+  capEl.classList.add('hide');
+  document.body.classList.add('playing');
+  resetGame();
+  G.state = 'playing';
+  preloadModel(G.char);
+
+  /* 从拍照页回来时最容易在这里出现"只有中间一块有画面"，
+     进游戏前统一把背景重新铺一遍 */
+  if(camStream) await ensureCamBg();
+}
+
+async function prepareAndPlay(){
+  ensureAudio();
+
+  // 拍照切过镜头的话这里补一次
+  if(!camStream){
+    let ok = await openCam(camFacing);
+    if(!ok){ await new Promise(r => setTimeout(r, 320)); ok = await openCam(camFacing); }
+  } else {
+    await ensureCamBg();
+  }
+  await enterGame();
+}
+
+function gameOver(){
+  G.state = 'over';
+  document.body.classList.remove('playing');
+
+  const zero = G.score <= 0;
+  if(G.score > G.best) G.best = G.score;
+  /* 拿到几颗星就记下对应的那张模板；拿过的都留着，之后拍照可以来回换。
+     owned 存的是模板的星数（不是得分）—— 2 星会落到 1 星那张上，避免重复。
+     只存在内存里 —— 刷新页面重进就没了，正是要的效果 */
+  if(G.score >= 1){
+    const own = templateFor(G.score);
+    if(own && G.owned.indexOf(own.stars) < 0) G.owned.push(own.stars);
+  }
+
+  if(zero) SFX.miss(); else SFX.win();
+
+  let title;
+  if(G.score >= CONFIG.starTotal) title = '满星通关';
+  else if(G.score >= 3) title = '差一点点';
+  else if(G.score >= 1) title = '还不错';
+  else title = '加油！';
+  resultTitleEl.textContent = title;
+
+  const rs = document.getElementById('resultStars');
+  rs.innerHTML = '';
+  for(let i = 0; i < CONFIG.starTotal; i++){
+    const s = document.createElement('div');
+    s.className = 'rs' + (i < G.score ? ' on' : '');
+    s.innerHTML = STAR_SVG;
+    rs.appendChild(s);
+  }
+
+  /* 0 星拿不到合照模板：不显示模板卡内容，也不给「去拍照」 */
+  resultEl.classList.toggle('zero', zero);
+
+  if(zero){
+    photoCard.classList.remove('has-tpl');
+    photoImg.removeAttribute('src');
+    photoImg.style.display = 'none';
+    photoPh.style.display = 'block';
+    photoPh.style.whiteSpace = 'pre-line';
+    photoPh.textContent = '这次一颗都没接到\n再来一次，就能解锁合照啦';
+    hintEl.textContent = '再接住星星，就有合照模板可以拍啦';
+  } else {
+    const tpl = templateFor(G.score);
+    // 先把占位文字设好：模板图万一缺图，error 回调把图藏掉就落在这里，不会是空的
+    photoPh.style.whiteSpace = 'pre-line';
+    photoPh.style.display = 'block';
+    photoPh.textContent = (tpl ? tpl.stars + ' 星合照' : '合照模板') + '\n等待替换';
+    if(tpl){
+      photoImg.style.display = 'block';
+      photoImg.src = tpl.src + (window.ASSET_Q || '');
+      photoCard.classList.add('has-tpl');
+      photoPh.style.display = 'none';     // 有了模板图就不显示占位文字
+    } else {
+      photoImg.removeAttribute('src');
+      photoImg.style.display = 'none';
+      photoCard.classList.remove('has-tpl');
+    }
+    hintEl.textContent = '星星收集数量越多，合照伙伴越多哟';
+  }
+
+  resultEl.classList.remove('hide');
+}
+
+/* =========================================================================
+   14. 拍照
+   ========================================================================= */
+const capStage = document.getElementById('capStage');
+const capTpl   = document.getElementById('capTemplate');
+const faceCvEl = document.getElementById('capFaceCv');
+const faceScanEl = document.getElementById('faceScan');
+const scanCv   = document.getElementById('scanCv');
+const tplStrip = document.getElementById('tplStrip');
+const shotImg  = document.getElementById('shotImg');
+const capBackBtn = document.getElementById('capBack');
+const shootBtnEl = document.getElementById('shootBtn');
+let shotDataUrl = '';
+let tplSel = null;                 // 当前选中的合照模板
+let capGeo = null;                 // 模板 & 圆圈脸在视口里的位置（CSS px）
+let capStep = 'face';              // 'face' 识脸 → 'pose' 合照
+let faceShot = null;               // 拍下来的那张正方形脸（canvas），贴模板就用它
+let faceShotMirror = false;        // 拍的时候是不是前置（决定贴上去要不要翻）
+
+/* 模板图加载完再摆位置；缺图就把整层收掉，绝不留一个空框 */
+capTpl.addEventListener('load',  () => layoutCapScene());
+capTpl.addEventListener('error', () => { capTpl.style.display = 'none'; layoutCapScene(); });
+
+/* 结算页的模板图：缺图时退回文字占位，别露出一张裂图 */
+photoImg.addEventListener('error', () => {
+  photoImg.style.display = 'none';
+  photoCard.classList.remove('has-tpl');
+  photoPh.style.display = 'block';
+});
+
+/* 模板图真的加载出来了才摆；否则整层隐藏 */
+function tplReady(){
+  return !!(tplSel && capTpl.complete && capTpl.naturalWidth);
+}
+
+/* 取脸窗口：就是识脸页那个圆圈在屏幕上的位置（自拍时脸大致就在这儿）。
+   预览、拍照、贴模板全从这里取，所以看到什么就拍到什么。
+   返回视频源坐标；自拍时源坐标要翻一次（屏幕上看到的是镜像）。 */
+function scanRect(){
+  if(!scanCv) return null;
+  const r = scanCv.getBoundingClientRect();
+  if(r.width < 8) return null;
+  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, side: Math.min(r.width, r.height) };
+}
+
+function faceSrcRect(rect){
+  const v = camEl;
+  if(!v || v.readyState < 2 || !v.videoWidth) return null;
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const sc = Math.max(W / vw, H / vh);            // 和 drawCamBg 同一套 cover 映射
+  const offX = (W - vw * sc) / 2, offY = (H - vh * sc) / 2;
+
+  const R = rect || scanRect();
+  if(!R) return null;
+  const side = R.side;
+  const ccx  = R.cx;
+  const ccy  = R.cy;
+
+  let sx = (ccx - side / 2 - offX) / sc;
+  let sy = (ccy - side / 2 - offY) / sc;
+  const sSize = side / sc;
+  if(camFacing === 'user') sx = vw - (sx + sSize);
+
+  const kx = clamp(sx, 0, Math.max(vw - 1, 0));
+  const ky = clamp(sy, 0, Math.max(vh - 1, 0));
+  const kw = Math.min(sSize, vw - kx);
+  const kh = Math.min(sSize, vh - ky);
+  if(kw < 1 || kh < 1) return null;
+  return { v, kx, ky, kw, kh };
+}
+
+/* 当前该画哪块脸：拍过就用那张定格的正方形照片，没拍过就现取实景 */
+function faceFrame(){
+  if(faceShot){
+    return { img: faceShot, sx: 0, sy: 0, sw: faceShot.width, sh: faceShot.height, mirror: faceShotMirror };
+  }
+  const s = faceSrcRect();
+  if(!s) return null;
+  return { img: s.v, sx: s.kx, sy: s.ky, sw: s.kw, sh: s.kh, mirror: camFacing === 'user' };
+}
+
+/* 识脸页那个圆圈：每帧把圆圈位置对应的实景画进去 */
+function paintScan(){
+  const el = scanCv;
+  if(!el) return;
+  const cssW = el.clientWidth;
+  if(cssW < 8) return;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const px  = Math.max(2, Math.round(cssW * dpr));
+  if(el.width !== px){ el.width = px; el.height = px; }
+  const g = el.getContext('2d');
+  g.clearRect(0, 0, px, px);
+
+  const src = faceSrcRect();
+  if(!src){
+    g.fillStyle = '#EFE8DE';
+    g.fillRect(0, 0, px, px);
+    if(shootBtnEl) shootBtnEl.classList.add('wait');   // 没画面时按钮按下去也没意义
+    return;
+  }
+  if(shootBtnEl) shootBtnEl.classList.remove('wait');
+  g.save();
+  if(camFacing === 'user'){ g.translate(px, 0); g.scale(-1, 1); }
+  g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, px, px);
+  g.restore();
+}
+
+/* 合照页里脖子上那张圆圈脸：拍完就定格，不再跟着镜头动 */
+function paintFacePatch(){
+  if(!capGeo) return;
+  const el = faceCvEl;
+  if(!el || !el.width) return;
+  const g = el.getContext('2d');
+  const w = el.width, h = el.height;
+  g.clearRect(0, 0, w, h);
+
+  const f = faceFrame();
+  if(!f){
+    // 取不到画面（没授权 / 摄像头不可用）：留一块和页面同色的空位，别弄成一块深灰
+    g.fillStyle = '#E8DFD2';
+    g.fillRect(0, 0, w, h);
+    return;
+  }
+  g.save();
+  if(f.mirror){ g.translate(w, 0); g.scale(-1, 1); }
+  g.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, 0, 0, w, h);
+  g.restore();
+}
+
+/* 一张合照卡的构图：模板小人摆哪儿、圆圈脸摆哪儿。
+   预览和成片调同一个函数，只有画框尺寸不同 —— 比例完全一致，
+   而且圆圈脸的直径只跟画框宽度走，五张模板必定一样大。 */
+function capCompose(bw, bh){
+  if(!tplSel) return null;
+  const t = tplSel;
+  const ar = (capTpl.naturalWidth || 1) / (capTpl.naturalHeight || 1);
+
+  let dh = bh * TPL_H;
+  let dw = dh * ar;
+  if(dw > bw * TPL_MAXW){ dw = bw * TPL_MAXW; dh = dw / ar; }
+
+  const x = (bw - dw) / 2;
+  const y = (bh - dh) * TPL_Y;
+
+  const fd   = bw * HEAD_FB;                       // 圆圈脸直径
+  const cx   = x + t.faceX * dw;                   // 脖子中轴
+  const botY = y + (t.faceY + (t.seat != null ? t.seat : HEAD_SEAT)) * dh;
+  const cy   = botY - fd * FACE_RY / 2;            // 圆心：底边压在脖子底
+
+  return { x, y, dw, dh, fd, cx, cy, botY };
+}
+
+/* 摆模板与圆圈脸：画框严格按成片的 4:5 放在取景区正中，
+   所以手机上看到的构图 = 拍出来那张照片的构图。 */
+function layoutCapScene(){
+  const r = capStage.getBoundingClientRect();
+  if(capStep !== 'pose' || !tplReady() || r.width < 20 || r.height < 20){
+    capGeo = null;
+    capTpl.style.display = 'none';
+    faceCvEl.style.display = 'none';
+    return;
+  }
+
+  // 4:5 画框，塞进取景区正中
+  const bw = Math.min(r.width, r.height * OUT_W / OUT_H);
+  const bh = bw * OUT_H / OUT_W;
+  const bx = (r.width  - bw) / 2;
+  const by = (r.height - bh) / 2;
+
+  const c = capCompose(bw, bh);
+  if(!c) return;
+
+  const left = bx + c.x, top = by + c.y;
+  capTpl.style.left   = left + 'px';
+  capTpl.style.top    = top + 'px';
+  capTpl.style.width  = c.dw + 'px';
+  capTpl.style.height = c.dh + 'px';
+  capTpl.style.display = 'block';
+
+  const fh   = c.fd * FACE_RY;
+  const boxL = bx + c.cx - c.fd / 2;
+  const boxT = by + c.cy - fh / 2;
+
+  faceCvEl.style.left   = boxL + 'px';
+  faceCvEl.style.top    = boxT + 'px';
+  faceCvEl.style.width  = c.fd + 'px';
+  faceCvEl.style.height = fh + 'px';
+  faceCvEl.style.display = 'block';
+
+  // 画布像素按 DPR 放大，贴片放大后才不糊
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const cw  = Math.max(2, Math.round(c.fd * dpr));
+  const ch  = Math.max(2, Math.round(fh * dpr));
+  if(faceCvEl.width !== cw || faceCvEl.height !== ch){ faceCvEl.width = cw; faceCvEl.height = ch; }
+
+  // 存成视口坐标（留给调试 / 之后的对齐提示）
+  capGeo = { x: r.left + left, y: r.top + top, w: c.dw, h: c.dh,
+             bw, bh, bx: r.left + bx, by: r.top + by,
+             fx: r.left + boxL, fy: r.top + boxT, fd: c.fd };
+
+  paintFacePatch();
+}
+
+onResizeCapture = () => {
+  if(G.state !== 'capture') return;
+  if(capStep === 'pose') layoutCapScene();
+  else if(scanCv) paintScan();
+};
+
+/* 只刷新缩略图的选中态（切步骤时用，不重新加载图片） */
+function buildStripSel(){
+  const cur = tplSel ? String(tplSel.stars) : '';
+  Array.prototype.forEach.call(tplStrip.children, c => {
+    c.classList.toggle('sel', c.dataset.stars === cur);
+  });
+}
+
+/* 选中某张模板 */
+function selectTemplate(t){
+  tplSel = t || null;
+  if(tplSel){
+    capTpl.style.display = 'block';
+    capTpl.src = tplSel.src + (window.ASSET_Q || '');
+  } else {
+    capTpl.style.display = 'none';
+    capTpl.removeAttribute('src');
+  }
+  layoutCapScene();
+  buildStripSel();
+}
+
+/* 上方一行：本次游戏里拿过的模板都留着，随时可以点回来换一张拍。
+   只存在内存里，刷新页面就清空（用户要的就是这个行为） */
+function buildTemplateStrip(){
+  const owned = (G.owned || []).slice().sort((a, b) => a - b);
+  tplStrip.innerHTML = '';
+
+  owned.forEach(stars => {
+    const t = TEMPLATES.find(x => x.stars === stars);
+    if(!t) return;
+
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tplChip';
+    b.dataset.stars = String(t.stars);
+
+    const ph = document.createElement('span');
+    ph.className = 'ph';
+    ph.textContent = t.stars + ' 星';
+
+    const img = document.createElement('img');
+    img.alt = '';
+    img.style.display = 'none';                 // 加载成功再显示，缺图就停在占位卡
+    img.addEventListener('load', () => { img.style.display = 'block'; });
+    img.addEventListener('error', () => { img.style.display = 'none'; ph.style.display = 'grid'; });
+    img.src = t.src + (window.ASSET_Q || '');
+
+    const bd = document.createElement('span');
+    bd.className = 'badge';
+    bd.textContent = '★'.repeat(t.stars);
+
+    b.appendChild(ph);
+    b.appendChild(img);
+    b.appendChild(bd);
+    b.addEventListener('click', () => { ensureAudio(); selectTemplate(t); });
+    tplStrip.appendChild(b);
+  });
+
+  // 默认选中本局拿到的那张（拿过的都在）
+  const pick = templateFor(G.score) || TEMPLATES.find(x => x.stars === owned[owned.length - 1]) || null;
+  selectTemplate(pick);
+}
+
+/* 切换拍照页的两步：face = 白底识脸，pose = 米白底合照 */
+function setCapStep(step){
+  capStep = step === 'pose' ? 'pose' : 'face';
+  capEl.dataset.step = capStep;
+
+  const pose = capStep === 'pose';
+  capBackBtn.textContent = pose ? '重拍' : '返回';
+  shootBtnEl.textContent = pose ? '完成' : '拍照';
+  shootBtnEl.classList.remove('wait');
+
+  if(pose){
+    buildStripSel();
+    requestAnimationFrame(() => layoutCapScene());
+  } else {
+    layoutCapScene();                 // 非 pose 会顺手把模板层收掉
+    requestAnimationFrame(() => paintScan());
+  }
+}
+
+/* 把圆圈里那一帧定格成一张正方形照片 —— 之后贴模板就用它 */
+function captureFace(){
+  const src = faceSrcRect();
+  if(!src){ faceShot = null; faceShotMirror = false; return false; }
+
+  const SQ = 640;
+  const c = document.createElement('canvas');
+  c.width = c.height = SQ;
+  const g = c.getContext('2d');
+  g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, SQ, SQ);
+
+  faceShot = c;
+  faceShotMirror = (camFacing === 'user');
+  return true;
+}
+
+async function openCapture(){
+  ensureAudio();
+  G.state = 'capture';
+  resultEl.classList.add('hide');
+  shotEl.classList.add('hide');
+  capEl.classList.remove('hide');
+  document.body.classList.add('capturing');
+  faceShot = null;                    // 每次进来都重新认一次脸
+  faceShotMirror = false;
+
+  buildTemplateStrip();
+  setCapStep('face');
+
+  /* 合照要的是自己的脸。游戏里用后摄看环境，进拍照页第一次自动换到前置；
+     用户自己翻过镜头（camTouched）就不再擅自切回去。 */
+  if(!camTouched && camFacing !== 'user'){
+    const ok = await openCam('user');
+    if(!ok) await openCam('environment');        // 没有前摄就退回后摄
+  } else if(!camStream){
+    await openCam(camFacing);
+  } else {
+    await ensureCamBg();
+  }
+  requestAnimationFrame(() => paintScan());
+}
+
+async function closeCapture(){
+  capEl.classList.add('hide');
+  shotEl.classList.add('hide');
+  document.body.classList.remove('capturing');
+  resultEl.classList.remove('hide');
+  G.state = 'over';
+  if(!camStream){
+    let ok = await openCam('environment');
+    if(!ok){ await new Promise(r => setTimeout(r, 280)); ok = await openCam('environment'); }
+  } else {
+    await ensureCamBg();
+  }
+}
+
+/* ---------- 人脸贴片 ---------- */
+
+/* 在 (cx, cy) 以直径 fd 贴一张正圆的人脸。
+   坐标用调用方的坐标系（成片是输出像素）；不需要外层变换。
+   边缘用径向渐变羽化掉 —— 硬边会像贴了张证件照，柔一点才像长在脖子上。 */
+function drawFaceAt(g, cx, cy, fd){
+  const rx = fd / 2;
+  const ry = rx * FACE_RY;
+
+  const f = faceFrame();
+  if(!f){
+    // 还没有画面：给一块淡色椭圆占位
+    g.save();
+    g.fillStyle = '#D9CFC0';
+    g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+    g.restore();
+    return;
+  }
+
+  // 2) 脸先画进临时画布，再用径向渐变把四边削成半透明
+  const SQ = 512;
+  const tc = document.createElement('canvas');
+  tc.width = tc.height = SQ;
+  const tg = tc.getContext('2d');
+  if(f.mirror){ tg.translate(SQ, 0); tg.scale(-1, 1); }
+  tg.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, 0, 0, SQ, SQ);
+
+  tg.globalCompositeOperation = 'destination-in';
+  const rg = tg.createRadialGradient(SQ / 2, SQ / 2, SQ * 0.30, SQ / 2, SQ / 2, SQ * 0.50);
+  rg.addColorStop(0,    'rgba(0,0,0,1)');
+  rg.addColorStop(0.92, 'rgba(0,0,0,1)');   // 羽化只吃最后一圈：太宽的软边会透出身后的东西
+  rg.addColorStop(1,    'rgba(0,0,0,0)');
+  tg.fillStyle = rg;
+  tg.fillRect(0, 0, SQ, SQ);
+
+  /* 3) 贴上：投影跟着这块羽化的 alpha 走。
+     不能先填一块实心圆当底再贴图 —— 羽化边会让那块底透出来，成为一圈浅色描边 */
+  g.save();
+  g.shadowColor   = 'rgba(20,16,14,.28)';
+  g.shadowBlur    = fd * 0.13;
+  g.shadowOffsetY = fd * 0.035;
+  g.drawImage(tc, cx - rx, cy - ry, rx * 2, ry * 2);
+  g.restore();
+}
+
+/* 合影出片：米白底 + 小人 + 脖子上的圆圈脸。
+   构图直接调 capCompose()，和屏幕上那份预览共用一套公式，不会有对不上的情况。 */
+function shoot(){
+  if(!tplReady() || !tplSel) return;
+  const c = capCompose(OUT_W, OUT_H);
+  if(!c) return;
+
+  const cc = document.createElement('canvas');
+  cc.width = OUT_W; cc.height = OUT_H;
+  const g = cc.getContext('2d');
+
+  g.fillStyle = '#F5F0E7';          // 米白底
+  g.fillRect(0, 0, OUT_W, OUT_H);
+
+  g.save();
+  g.shadowColor   = 'rgba(20,16,14,.20)';
+  g.shadowBlur    = 46;
+  g.shadowOffsetY = 20;
+  g.drawImage(capTpl, c.x, c.y, c.dw, c.dh);
+  g.restore();
+
+  drawFaceAt(g, c.cx, c.cy, c.fd);
+
+  shotDataUrl = cc.toDataURL('image/jpeg', 0.92);
+  shotImg.src = shotDataUrl;
+
+  SFX.shutter();
+  capEl.classList.add('hide');      // 取景页先收掉，结果页才是干净的底色
+  shotEl.classList.remove('hide');
+}
+
+/* 底部那颗主按钮：识脸这一步是"拍照"，合照这一步是"完成" */
+function onShootTap(){
+  ensureAudio();
+  if(capStep === 'face'){
+    if(!captureFace() && camStream){
+      // 摄像头在预热，等有画面再拍，否则贴上去是一块灰
+      toast('摄像头还没出画面，稍等一下');
+      return;
+    }
+    setCapStep('pose');
+  } else {
+    shoot();
+  }
+}
+
+/* 重新拍摄：结果页收掉、回到合照页（脸还在，可以换模板再拍；想换脸点"重拍"） */
+function retake(){
+  ensureAudio();
+  shotEl.classList.add('hide');
+  capEl.classList.remove('hide');
+  setCapStep(faceShot ? 'pose' : 'face');
+  if(!camStream) openCam(camFacing); else ensureCamBg();
+}
+
+/* =========================================================================
+   15. 主循环
+   ========================================================================= */
+let lastTs = 0, crashed = false;
+
+function safeRender(){
+  if(crashed) return;
+  try{ render(); }
+  catch(err){
+    crashed = true;
+    console.error('[render]', err);
+    const el = document.createElement('div');
+    el.id = 'crash';
+    el.textContent = '渲染出错：' + (err && err.message ? err.message : err);
+    document.body.appendChild(el);
+  }
+}
+
+function loop(ts){
+  const dt = Math.min((ts - lastTs) / 1000 || 0, 0.05);
+  lastTs = ts;
+
+  ANIM.t += dt;
+  ANIM.bounce = damp(ANIM.bounce, 0, 6, dt);
+  ANIM.sink   = damp(ANIM.sink,   0, 5, dt);
+
+  if(G.state === 'playing'){
+    updateSprite(dt);
+    updateItems(dt);
+    updateTimers(dt);
+    updateParticles(dt);
+    if(G.shake > 0) G.shake = Math.max(0, G.shake - dt*3.2);
+  } else {
+    G.t += dt;
+    updateParticles(dt);
+    G.sprite.mood = 'idle';
+    if(G.shake > 0) G.shake = Math.max(0, G.shake - dt*3.2);
+  }
+
+  if(G.state === 'scan') updateScan(dt);
+
+  /* 摄像头自愈：切前后镜头 / 切后台之后 video 可能被挂起，或者丢了尺寸
+     （丢了尺寸就会只铺一块、或者露出底下的暖米色底），两种都补一次 */
+  if(camStream && (camEl.paused || !camEl.videoWidth) && G.state !== 'capture' && ts > camHealAt){
+    camHealAt = ts + 1200;
+    ensureCamBg().catch(() => {});
+  }
+
+  syncR3(dt);
+  safeRender();
+  requestAnimationFrame(loop);
+}
+let camHealAt = 0;
+
+/* =========================================================================
+   16. 绑定
+   ========================================================================= */
+document.querySelectorAll('.pick').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.pick').forEach(o => o.classList.remove('sel'));
+    el.classList.add('sel');
+    G.char = el.dataset.char;
+    ensureAudio();
+    preloadModel(G.char);
+  });
+});
+
+document.getElementById('startBtn').addEventListener('click', () => { prepareAndPlay(); });
+document.getElementById('againBtn').addEventListener('click', () => { prepareAndPlay(); });
+document.getElementById('changeBtn').addEventListener('click', () => { ensureAudio(); showIntro(); });
+document.getElementById('shotBtn').addEventListener('click', () => { openCapture(); });
+document.getElementById('capBack').addEventListener('click', () => {
+  /* 合照这一步先退回识脸，识脸这一步才是真的退出拍照 */
+  if(capStep === 'pose'){ faceShot = null; setCapStep('face'); }
+  else closeCapture();
+});
+document.getElementById('shootBtn').addEventListener('click', () => { onShootTap(); });
+document.getElementById('retakeBtn').addEventListener('click', () => { retake(); });
+document.getElementById('shotDone').addEventListener('click', () => { closeCapture(); });
+document.getElementById('exploreBtn').addEventListener('click', () => { startExplore(); });
+document.getElementById('exploreBack').addEventListener('click', () => { ensureAudio(); exitExplore(); });
+capFlipBtn.addEventListener('click', () => { ensureAudio(); flipCamera(); });
+camFailBtn.addEventListener('click', () => { enterGame(); });
+
+arBtn.addEventListener('click', () => {
+  if(camStream) closeCam(); else openCam(camFacing);
+});
+
+document.addEventListener('gesturestart', e => e.preventDefault());
+cvs.addEventListener('contextmenu', e => e.preventDefault());
+
+let toastTimer = 0;
+function toast(msg){
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2000);
+}
+
+/* =========================================================================
+   17. 启动
+   ========================================================================= */
+['v','a','d'].forEach(k => {
+  const im = new Image();
+  im.src = CHARS[k].img + (window.ASSET_Q || '');
+  CHAR_IMG[k] = im;
+});
+
+initScan();
+resize();
+buildSlots();
+G.sprite.x = W/2;
+G.sprite.tx = W/2;
+requestAnimationFrame(loop);
+bootScan();
+
+/* 3D 资源后置加载，不阻塞扫描；加载好再把形象换成建模 */
+loadThreeScript().then(ok => {
+  if(!ok) return;
+  if(!initR3()) return;
+  preloadModel(pendingChar || G.char);
+});
+
+window.__GAME = { G, CONFIG, CHARS, TEMPLATES, SCAN, ANIM, R3, modelCache,
+                  enterGame, prepareAndPlay, showIntro, analyzeMarker, bootScan,
+                  openCapture, shoot, closeCapture, retake, flipCamera, gameOver,
+                  startExplore, onDropFound, startExploreShow, exitExplore, analyzeDrop, analyzeMarker,
+                  selectTemplate, templateFor, scanSuccess: onScanSuccess,
+                  onCatch, onBomb, showFace, setEyesVisible, drawCamBg, EXPLORE,
+                  setCapStep, captureFace, onShootTap, capCompose, paintScan, paintFacePatch,
+                  get tplSel(){ return tplSel; },
+                  get capStep(){ return capStep; },
+                  get capGeo(){ return capGeo; },
+                  get faceShot(){ return faceShot; },
+                  get camFacing(){ return camFacing; } };
+})();
+</script>
+</body>
 </html>
