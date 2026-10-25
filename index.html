@@ -243,12 +243,11 @@
   }
 
   /* ---------- 拍照 ---------- */
-  /* 取景框用固定宽高（不再靠 aspect-ratio）：切前后镜头时两边分辨率不同，
-     靠比例算高度会被撑变形，这里用同一个变量锁死 3:4 */
+  /* 不再是"整块实景嵌进模板的洞里"，而是：全屏实景当背景，
+     模板人物当一张透明贴纸站在画面下半部，人把自己脸对准脖子上的圆框 */
   #capture{
-    justify-content:center;
-    padding-top:calc(env(safe-area-inset-top,0px) + 16px);
-    --capW: min(360px, 84vw);
+    justify-content:flex-start;
+    padding:calc(env(safe-area-inset-top,0px) + 12px) 0 calc(env(safe-area-inset-bottom,0px) + 20px);
   }
   /* 已获得的合照模板：一行可点的缩略图 */
   #tplStrip{
@@ -261,10 +260,11 @@
   }
   #tplStrip::-webkit-scrollbar{display:none}
   #tplStrip:empty{display:none}
+  /* 缩略图跟着模板改成横向（模板图本身就是横的） */
   .tplChip{
     position:relative;flex:0 0 auto;
-    width:60px;height:76px;padding:0;
-    border:2px solid transparent;border-radius:13px;
+    width:76px;height:56px;padding:0;
+    border:2px solid transparent;border-radius:12px;
     background:#F1EBE4;overflow:hidden;cursor:pointer;font-family:inherit;
     transition:transform .22s cubic-bezier(.34,1.56,.64,1), border-color .2s;
   }
@@ -272,9 +272,9 @@
     position:absolute;inset:0;display:grid;place-items:center;
     font-size:10.5px;font-weight:700;color:#B5A897;letter-spacing:.06em;
   }
-  .tplChip img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+  .tplChip img{position:absolute;inset:2px 2px 13px;width:calc(100% - 4px);height:calc(100% - 15px);object-fit:contain;display:block}
   .tplChip .badge{
-    position:absolute;left:0;right:0;bottom:0;height:15px;
+    position:absolute;left:0;right:0;bottom:0;height:14px;
     display:grid;place-items:center;
     font-size:9px;font-weight:800;letter-spacing:.08em;
     color:#7C4A12;background:rgba(255,209,102,.94);
@@ -285,40 +285,40 @@
     box-shadow:0 9px 20px rgba(20,16,14,.18);
   }
 
-  /* 取景画框：整页透出背后的实景，框本身不带任何底色 */
+  /* 取景提示：背景是随时在变的实景，用深色胶囊保证永远读得清 */
+  #capTip{
+    flex:0 0 auto;margin:4px 0 4px;
+    font-size:12px;font-weight:600;letter-spacing:.04em;
+    color:#fff;padding:5px 15px;border-radius:99px;
+    background:rgba(20,16,14,.44);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+  }
+  /* 合照舞台：整块透明，模板图由 JS 按比例摆进去 */
   #capStage{
-    position:relative;
-    width:var(--capW);
-    height:calc(var(--capW) * 4 / 3);
-    border-radius:20px;overflow:hidden;background:transparent;
-    flex:0 0 auto;border:none;outline:none;
+    position:relative;flex:1 1 auto;
+    width:100%;min-height:0;background:transparent;
+    pointer-events:none;
   }
-  /* 模板图在照片位挖一个洞：洞内透明，直接透出下面的摄像头实景 */
+  /* 模板人物：透明底的贴纸，尺寸 / 位置全由 layoutCapScene() 给 */
   #capTemplate{
-    position:absolute;inset:0;width:100%;height:100%;
-    object-fit:cover;display:none;
-    --sx:10%; --sy:14%; --sw:80%; --sh:66%;
-    -webkit-mask-image:
-      linear-gradient(#000,#000), linear-gradient(#000,#000),
-      linear-gradient(#000,#000), linear-gradient(#000,#000);
-    -webkit-mask-repeat:no-repeat;
-    -webkit-mask-position:0 0, 0 100%, 0 var(--sy), 100% var(--sy);
-    -webkit-mask-size:
-      100% var(--sy),
-      100% calc(100% - var(--sy) - var(--sh)),
-      var(--sx) var(--sh),
-      calc(100% - var(--sx) - var(--sw)) var(--sh);
-    mask-image:
-      linear-gradient(#000,#000), linear-gradient(#000,#000),
-      linear-gradient(#000,#000), linear-gradient(#000,#000);
-    mask-repeat:no-repeat;
-    mask-position:0 0, 0 100%, 0 var(--sy), 100% var(--sy);
-    mask-size:
-      100% var(--sy),
-      100% calc(100% - var(--sy) - var(--sh)),
-      var(--sx) var(--sh),
-      calc(100% - var(--sx) - var(--sw)) var(--sh);
+    position:absolute;display:none;
+    object-fit:contain;
+    filter:drop-shadow(0 16px 32px rgba(20,16,14,.26));
   }
+  /* 人脸取景圆：把脸对进这个圈，拍出来就接在小人脖子上 */
+  #capFace{
+    position:absolute;display:none;border-radius:50%;
+    box-shadow:0 0 0 2.5px rgba(255,255,255,.95),
+               0 0 0 3.5px rgba(20,16,14,.18),
+               0 6px 20px rgba(20,16,14,.20);
+  }
+  #capFace i{
+    position:absolute;inset:-10px;border-radius:50%;
+    border:2px dashed rgba(255,255,255,.58);
+    animation:faceSpin 10s linear infinite;
+  }
+  @keyframes faceSpin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){ #capFace i{animation:none} }
   /* 反转镜头：挂在屏幕右上角（不再压在取景框上，不挡画面） */
   #capFlip{
     position:absolute;z-index:5;
@@ -406,9 +406,9 @@
     #scanFrame{width:min(56vmin,208px);height:min(56vmin,208px);border-radius:24px}
     .btn{padding:13px 38px;font-size:15px}
     #photoCard{height:min(30vh,190px)}
-    #capture{--capW:min(300px,72vw)}
-    #tplStrip{padding-bottom:9px;gap:7px}
-    .tplChip{width:52px;height:66px;border-radius:11px}
+    #capture{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
+    #tplStrip{padding-bottom:6px;gap:7px}
+    .tplChip{width:66px;height:50px;border-radius:11px}
     .capActions{margin-top:13px}
     #shootBtn{padding:13px 44px}
     #capBack{padding:13px 28px}
@@ -489,9 +489,11 @@
   <!-- 拍照（整页透明：背景就是背后的摄像头实景） -->
   <div class="sheet clear hide" id="capture">
     <div id="tplStrip"></div>
+    <div id="capTip">站远一点，把脸对进白圈</div>
 
     <div id="capStage">
       <img id="capTemplate" alt="">
+      <div id="capFace"><i></i></div>
     </div>
 
     <!-- 反转镜头：屏幕右上角 -->
@@ -653,16 +655,20 @@ function hitPose(persona, e){
   };
 }
 
-/* 合照模板：一星 ~ 五星共 5 张，小游戏拿到几颗星就解锁到第几张。
-   把图片放到 templates/1.png ~ 5.png 即可自动出现；缺图时显示占位卡，不会报错。
-   slot = 摄像头画面（照片位）在模板里的比例位置 */
+/* 合照模板：1 / 3 / 4 / 5 星各一张（星数不够就取够得着的那张，2 星用 1 星那张）。
+   图都是透明底 PNG，直接叠在实景上当"贴纸"用。
+   faceX / faceY = 人脸圆心在模板图里的相对位置（0~1），由图中"脖子小方块"量出；
+   人脸直径统一按模板图高的 0.26 算 —— 四张图已归一到同一图高，所以脸一样大。
+   换了模板图必须重量一次这两个数，否则脸会接歪。 */
 const TEMPLATES = [
-  { stars:1, src:'templates/1.png', slot:{ x:0.12, y:0.16, w:0.76, h:0.62 } },
-  { stars:2, src:'templates/2.png', slot:{ x:0.12, y:0.16, w:0.76, h:0.62 } },
-  { stars:3, src:'templates/3.png', slot:{ x:0.10, y:0.14, w:0.80, h:0.66 } },
-  { stars:4, src:'templates/4.png', slot:{ x:0.10, y:0.14, w:0.80, h:0.66 } },
-  { stars:5, src:'templates/5.png', slot:{ x:0.08, y:0.12, w:0.84, h:0.70 } },
+  { stars:1, src:'templates/1.png', faceX:0.591, faceY:0.170 },
+  { stars:3, src:'templates/3.png', faceX:0.388, faceY:0.336 },
+  { stars:4, src:'templates/4.png', faceX:0.476, faceY:0.303 },
+  { stars:5, src:'templates/5.png', faceX:0.449, faceY:0.258 },
 ];
+
+/* 人脸圆直径相对模板图高 */
+const FACE_D_RATIO = 0.26;
 
 /* 按星数取最高的那张模板 */
 function templateFor(stars){
@@ -704,6 +710,8 @@ const rand  = (a,b) => a + Math.random() * (b - a);
 const lerp  = (a,b,t) => a + (b - a) * t;
 const damp  = (cur,target,speed,dt) => lerp(cur, target, 1 - Math.exp(-speed * dt));
 
+let onResizeCapture = null;      // 拍照页在后面才初始化，这里先占位
+
 function resize(){
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   W = stage.clientWidth;
@@ -723,6 +731,7 @@ function resize(){
   sp.tx = clamp(sp.tx || W / 2, sp.w * 0.5 + 6 * S, W - sp.w * 0.5 - 6 * S);
 
   updateR3Layout();
+  if(onResizeCapture) onResizeCapture();   // 拍照页开着时窗口变了，重摆模板
 }
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 180));
@@ -2253,6 +2262,7 @@ function onScanSuccess(){
    ========================================================================= */
 let camStream = null, camStarting = false;
 let camFacing = 'environment';   // 全局只有一路摄像头，拍照页翻镜头就是换这一路
+let camTouched = false;          // 用户手动切过镜头后，进拍照页就不再自动切前置
 
 /* 把摄像头画面按 cover 铺满整块画布。
    不再依赖 <video> 的 object-fit：微信 / 部分安卓内核对 video 的 object-fit
@@ -2329,6 +2339,12 @@ async function openCam(facing){
       audio: false,
     });
     camStream = s;
+    /* ideal 不保证满足：设备只有一路镜头时浏览器会照样给流。
+       以 track 实际报的 facingMode 为准，镜像方向才不会反 */
+    try{
+      const st = s.getVideoTracks()[0] && s.getVideoTracks()[0].getSettings();
+      if(st && st.facingMode) camFacing = st.facingMode;
+    }catch(e){}
     camEl.srcObject = s;
     /* 先挂 cam-on 再 play：play() 被自动播放策略拒掉时也不会卡在空白底图上 */
     document.body.classList.add('cam-on');
@@ -2358,6 +2374,7 @@ function closeCam(){
 
 /* 切换前后镜头：整条链只有一路流，换镜头就是关掉重开 */
 async function flipCamera(){
+  camTouched = true;                 // 用户自己选过镜头，之后进拍照页不再自动切前置
   const next = camFacing === 'user' ? 'environment' : 'user';
   closeCam();
   await new Promise(r => setTimeout(r, 140));
@@ -2367,6 +2384,7 @@ async function flipCamera(){
     await openCam(camFacing);
     toast('这台设备只有一个镜头');
   }
+  syncCapTip();
 }
 
 /* =========================================================================
@@ -2497,9 +2515,13 @@ function gameOver(){
 
   const zero = G.score <= 0;
   if(G.score > G.best) G.best = G.score;
-  /* 拿到几颗星就记下第几张模板；拿过的都留着，之后拍照可以来回换。
+  /* 拿到几颗星就记下对应的那张模板；拿过的都留着，之后拍照可以来回换。
+     owned 存的是模板的星数（不是得分）—— 2 星会落到 1 星那张上，避免重复。
      只存在内存里 —— 刷新页面重进就没了，正是要的效果 */
-  if(G.score >= 1 && G.owned.indexOf(G.score) < 0) G.owned.push(G.score);
+  if(G.score >= 1){
+    const own = templateFor(G.score);
+    if(own && G.owned.indexOf(own.stars) < 0) G.owned.push(own.stars);
+  }
 
   if(zero) SFX.miss(); else SFX.win();
 
@@ -2557,14 +2579,16 @@ function gameOver(){
    ========================================================================= */
 const capStage = document.getElementById('capStage');
 const capTpl   = document.getElementById('capTemplate');
+const capFaceEl= document.getElementById('capFace');
 const tplStrip = document.getElementById('tplStrip');
 const shotImg  = document.getElementById('shotImg');
 let shotDataUrl = '';
 let tplSel = null;                 // 当前选中的合照模板
+let capGeo = null;                 // 模板 & 人脸圆在视口里的位置（CSS px）
 
-/* 模板图加载完再按它的照片位摆放；缺图就退回铺满，避免留白框 */
-capTpl.addEventListener('load',  () => { capTpl.style.display = 'block'; layoutCapSlot(); });
-capTpl.addEventListener('error', () => { capTpl.style.display = 'none'; layoutCapSlot(); });
+/* 模板图加载完再摆位置；缺图就把整层收掉，绝不留一个空框 */
+capTpl.addEventListener('load',  () => layoutCapScene());
+capTpl.addEventListener('error', () => { capTpl.style.display = 'none'; layoutCapScene(); });
 
 /* 结算页的模板图：缺图时退回文字占位，别露出一张裂图 */
 photoImg.addEventListener('error', () => {
@@ -2573,23 +2597,64 @@ photoImg.addEventListener('error', () => {
   photoPh.style.display = 'block';
 });
 
-/* 模板图真的加载出来了，才按模板的照片位摆放；否则让照片铺满整张，绝不露白 */
+/* 模板图真的加载出来了才摆；否则整层隐藏 */
 function tplReady(){
   return !!(tplSel && capTpl.complete && capTpl.naturalWidth);
 }
-function currentSlot(){
-  if(tplReady()) return tplSel.slot || { x:0, y:0, w:1, h:1 };
-  return { x: 0, y: 0, w: 1, h: 1 };
+
+/* 提示语跟着镜头走：不是自拍时先教用户切前置，否则脸根本对不进圈 */
+function syncCapTip(){
+  const el = document.getElementById('capTip');
+  if(!el) return;
+  el.textContent = (camFacing === 'user')
+    ? '站远一点，把脸对进白圈'
+    : '点右上角切前置，再把脸对进白圈';
 }
 
-/* 把照片位写进模板图的遮罩：洞内透明，直接透出背后的摄像头实景 */
-function layoutCapSlot(){
-  const s = currentSlot();
-  capTpl.style.setProperty('--sx', (s.x * 100) + '%');
-  capTpl.style.setProperty('--sy', (s.y * 100) + '%');
-  capTpl.style.setProperty('--sw', (s.w * 100) + '%');
-  capTpl.style.setProperty('--sh', (s.h * 100) + '%');
+/* 摆模板与脸部取景圆：
+   模板按"高度占满舞台"缩放（四张图已归一到同一图高，人物大小才一致），
+   宽度超出就退回按宽度定，然后贴底居中；人脸圆挂在模板的脖子上。 */
+function layoutCapScene(){
+  const r = capStage.getBoundingClientRect();
+  if(!tplReady() || r.width < 20 || r.height < 20){
+    capGeo = null;
+    capTpl.style.display = 'none';
+    capFaceEl.style.display = 'none';
+    return;
+  }
+
+  const t  = tplSel;
+  const ar = capTpl.naturalWidth / capTpl.naturalHeight;
+  let dh = r.height;
+  let dw = dh * ar;
+  const maxW = r.width * 0.97;              // 两侧留一点边，幽灵不贴屏幕边
+  if(dw > maxW){ dw = maxW; dh = dw / ar; }
+
+  const x = (r.width  - dw) / 2;
+  const y = (r.height - dh);                 // 贴底站住
+
+  const fx = x + t.faceX * dw;
+  const fy = y + t.faceY * dh;
+  const fr = dh * FACE_D_RATIO / 2;
+
+  capTpl.style.left   = x + 'px';
+  capTpl.style.top    = y + 'px';
+  capTpl.style.width  = dw + 'px';
+  capTpl.style.height = dh + 'px';
+  capTpl.style.display = 'block';
+
+  capFaceEl.style.left   = (fx - fr) + 'px';
+  capFaceEl.style.top    = (fy - fr) + 'px';
+  capFaceEl.style.width  = (fr * 2) + 'px';
+  capFaceEl.style.height = (fr * 2) + 'px';
+  capFaceEl.style.display = 'block';
+
+  // 存成视口坐标，拍照时直接乘缩放比
+  capGeo = { x: r.left + x, y: r.top + y, w: dw, h: dh,
+             fx: r.left + fx, fy: r.top + fy, fr: fr };
 }
+
+onResizeCapture = () => { if(G.state === 'capture') layoutCapScene(); };
 
 /* 选中某张模板 */
 function selectTemplate(t){
@@ -2601,7 +2666,7 @@ function selectTemplate(t){
     capTpl.style.display = 'none';
     capTpl.removeAttribute('src');
   }
-  layoutCapSlot();
+  layoutCapScene();
   const cur = tplSel ? String(tplSel.stars) : '';
   Array.prototype.forEach.call(tplStrip.children, c => {
     c.classList.toggle('sel', c.dataset.stars === cur);
@@ -2646,7 +2711,7 @@ function buildTemplateStrip(){
   });
 
   // 默认选中本局拿到的那张（拿过的都在）
-  const pick = TEMPLATES.find(x => x.stars === G.score) || TEMPLATES.find(x => x.stars === owned[owned.length - 1]) || null;
+  const pick = templateFor(G.score) || TEMPLATES.find(x => x.stars === owned[owned.length - 1]) || null;
   selectTemplate(pick);
 }
 
@@ -2659,11 +2724,19 @@ async function openCapture(){
   document.body.classList.add('capturing');
 
   buildTemplateStrip();
+  requestAnimationFrame(() => layoutCapScene());   // 等 flex 布局稳定后再摆一次
 
-  /* 不再另开一路摄像头：整页背景就是游戏里那一路实景，
-     所以不会出现"白底框"，也不用担心手机上同时只能开一路的限制 */
-  if(!camStream) await openCam(camFacing);
-  else await ensureCamBg();
+  /* 合照要的是自己的脸。游戏里用后摄看环境，进拍照页第一次自动换到前置；
+     用户自己翻过镜头（camTouched）就不再擅自切回去。 */
+  if(!camTouched && camFacing !== 'user'){
+    const ok = await openCam('user');
+    if(!ok) await openCam('environment');        // 没有前摄就退回后摄
+  } else if(!camStream){
+    await openCam(camFacing);
+  } else {
+    await ensureCamBg();
+  }
+  syncCapTip();
 }
 
 async function closeCapture(){
@@ -2680,91 +2753,126 @@ async function closeCapture(){
   }
 }
 
-/* 把预览区合成成一张图 */
-function shoot(){
-  const rect = capStage.getBoundingClientRect();
-  const outW = 1080;
-  const outH = Math.round(outW * rect.height / rect.width);
+/* 把整屏画面合成成一张图：实景铺底 → 模板人物贴上去 → 人脸圆盖在脖子上。
+   mirror = 自拍，整块按镜像画，拍出来才和取景时看到的一致。
+   返回 false 表示这一段暂时没有可用画面。 */
+function drawVideoCover(g, dx, dy, dw, dh, mirror){
+  const v = camEl;
+  if(!v || v.readyState < 2 || !v.videoWidth || !v.videoHeight) return false;
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const sc = Math.max(dw / vw, dh / vh);
+  const sw = dw / sc, sh = dh / sc;
+  const sx = (vw - sw) / 2, sy = (vh - sh) / 2;
 
-  const cc = document.createElement('canvas');
-  cc.width = outW; cc.height = outH;
-  const g = cc.getContext('2d');
-
-  /* 底色只在模板缺图时露出来，用暖米色而不是纯白，绝不会出现白框 */
-  g.fillStyle = '#E7DFD4';
-  g.fillRect(0, 0, outW, outH);
-
-  if(tplReady()){
-    // 模板按 cover 铺满
-    const ir = capTpl.naturalWidth / capTpl.naturalHeight;
-    const or = outW / outH;
-    let dw, dh;
-    if(ir > or){ dh = outH; dw = dh * ir; } else { dw = outW; dh = dw / ir; }
-    g.drawImage(capTpl, (outW-dw)/2, (outH-dh)/2, dw, dh);
+  g.save();
+  if(mirror){
+    g.translate(dx + dw, dy);
+    g.scale(-1, 1);
+    g.drawImage(v, sx, sy, sw, sh, 0, 0, dw, dh);
+  } else {
+    g.drawImage(v, sx, sy, sw, sh, dx, dy, dw, dh);
   }
+  g.restore();
+  return true;
+}
 
-  const slot = currentSlot();
-  const ox = outW * slot.x;
-  const oy = outH * slot.y;
-  const ow = outW * slot.w;
-  const oh = outH * slot.h;
+/* 人脸圆：白边相纸圈 + 圈里那块实景（就是刚才用户把脸对准的位置）。
+   坐标一律用 CSS px，外层的变换负责放大；只有 shadow 是设备像素，得乘 k。 */
+function drawFaceBubble(g, k){
+  const cx = capGeo.fx, cy = capGeo.fy, r = capGeo.fr;
+  const ring = Math.max(1.8, r * 0.075);
+
+  g.save();
+  g.shadowColor = 'rgba(20,16,14,.34)';
+  g.shadowBlur = r * 0.34 * k;
+  g.shadowOffsetY = r * 0.11 * k;
+  g.beginPath();
+  g.arc(cx, cy, r + ring, 0, Math.PI * 2);
+  g.fillStyle = '#fff';
+  g.fill();
+  g.restore();
+
+  const v = camEl;
+  if(!v || v.readyState < 2 || !v.videoWidth) return;
+
+  const vw = v.videoWidth, vh = v.videoHeight;
+  const sc = Math.max(W / vw, H / vh);          // 与 drawCamBg 同一套映射
+  const offsetX = (W - vw * sc) / 2, offsetY = (H - vh * sc) / 2;
+
+  let sx = (capGeo.fx - capGeo.fr - offsetX) / sc;
+  let sy = (capGeo.fy - capGeo.fr - offsetY) / sc;
+  const sSize = (capGeo.fr * 2) / sc;
+  if(camFacing === 'user') sx = vw - (sx + sSize);
+
+  const kx = clamp(sx, 0, Math.max(vw - 1, 0));
+  const ky = clamp(sy, 0, Math.max(vh - 1, 0));
+  const kw = Math.min(sSize, vw - kx);
+  const kh = Math.min(sSize, vh - ky);
+  if(kw < 1 || kh < 1) return;
 
   g.save();
   g.beginPath();
-  g.rect(ox, oy, ow, oh);
+  g.arc(cx, cy, r, 0, Math.PI * 2);
   g.clip();
+  if(camFacing === 'user'){
+    g.translate(cx + r, cy - r);
+    g.scale(-1, 1);
+    g.drawImage(v, kx, ky, kw, kh, 0, 0, r * 2, r * 2);
+  } else {
+    g.drawImage(v, kx, ky, kw, kh, cx - r, cy - r, r * 2, r * 2);
+  }
+  g.restore();
+}
 
-  /* 照片位里放的画面：按"洞口"在屏幕上的实际位置去实景里截那一块，
-     所以拍出来的照片和预览时透过洞口看到的画面是同一块内容 */
-  const v = camEl;
-  const stageRect = capStage.getBoundingClientRect();
-  if(v && v.readyState >= 2 && v.videoWidth && stageRect.width > 0){
-    const vw = v.videoWidth, vh = v.videoHeight;
-    const sc = Math.max(W / vw, H / vh);          // 与 drawCamBg 同一套映射
-    const dw = vw * sc, dh = vh * sc;
-    const offsetX = (W - dw) / 2, offsetY = (H - dh) / 2;
+/* 拍：从屏幕构图里裁一块 4:5 出来（底部对齐，脚不会被裁掉），
+   模板 / 人脸圆的位置都照搬屏幕坐标，所以拍到的东西和取景时一模一样 */
+function shoot(){
+  if(!capGeo) layoutCapScene();    // 刚换过模板图、还没摆位时补一次
 
-    // 洞口在屏幕上的矩形
-    const holeL = stageRect.left + stageRect.width  * slot.x;
-    const holeT = stageRect.top  + stageRect.height * slot.y;
-    const holeW = stageRect.width  * slot.w;
-    const holeH = stageRect.height * slot.h;
+  const OUT_W = 1080, OUT_H = 1350;
+  const ar = OUT_W / OUT_H;
 
-    // 换算成视频源坐标
-    let srcX = (holeL - offsetX) / sc;
-    let srcY = (holeT - offsetY) / sc;
-    const srcW = holeW / sc;
-    const srcH = holeH / sc;
-
-    if(camFacing === 'user'){
-      // 画布上已经镜像过，这里同样按镜像取
-      srcX = vw - (srcX + srcW);
-    }
-
-    const kx = clamp(srcX, 0, Math.max(vw - 1, 0));
-    const ky = clamp(srcY, 0, Math.max(vh - 1, 0));
-    const kw = Math.min(srcW, vw - kx);
-    const kh = Math.min(srcH, vh - ky);
-
-    if(kw > 1 && kh > 1){
-      if(camFacing === 'user'){
-        /* 自拍：取景里看到的是镜像画面，照片也保持镜像，拍出来才和刚才看到的一致 */
-        g.save();
-        g.translate(ox + ow, oy);
-        g.scale(-1, 1);
-        g.drawImage(v, kx, ky, kw, kh, 0, 0, ow, oh);
-        g.restore();
-      } else {
-        g.drawImage(v, kx, ky, kw, kh, ox, oy, ow, oh);
-      }
-    } else {
-      g.fillStyle = '#D9CFC0';
-      g.fillRect(ox, oy, ow, oh);
+  let sw = W, sh = H, ox = 0, oy = 0;
+  if(W / H < ar){
+    sh = W / ar;
+    oy = H - sh;                     // 默认从底部往上取，脚不会被裁
+    /* 但高一点的模板（一星那张）头顶会伸出这条线，脸圈就被切了。
+       所以把取景窗往上挪到模板块上方一点；挪不动就退回贴底。 */
+    if(capGeo){
+      const want  = capGeo.y - 12;
+      const minOy = Math.max(0, capGeo.y + capGeo.h - sh);   // 再往上就裁到脚
+      const maxOy = Math.max(0, H - sh);                     // 再往下就超出屏幕
+      oy = clamp(want, minOy, maxOy);
     }
   } else {
-    g.fillStyle = '#D9CFC0';
-    g.fillRect(ox, oy, ow, oh);
+    sw = H * ar;
+    ox = (W - sw) / 2;               // 屏幕更宽：左右居中取
   }
+  const k = OUT_W / sw;
+
+  const cc = document.createElement('canvas');
+  cc.width = OUT_W; cc.height = OUT_H;
+  const g = cc.getContext('2d');
+  g.fillStyle = '#E7DFD4';
+  g.fillRect(0, 0, OUT_W, OUT_H);
+
+  // 之后所有绘制都用屏幕 CSS 坐标，变换负责裁切 + 放大
+  g.save();
+  g.setTransform(k, 0, 0, k, -ox * k, -oy * k);
+
+  drawVideoCover(g, 0, 0, W, H, camFacing === 'user');
+
+  if(capGeo && tplReady()){
+    // 和预览时的 CSS drop-shadow 对得上，照片才不会跟屏幕差一截
+    g.save();
+    g.shadowColor = 'rgba(20,16,14,.26)';
+    g.shadowBlur = 32 * k;
+    g.shadowOffsetY = 16 * k;
+    g.drawImage(capTpl, capGeo.x, capGeo.y, capGeo.w, capGeo.h);
+    g.restore();
+    drawFaceBubble(g, k);
+  }
+
   g.restore();
 
   shotDataUrl = cc.toDataURL('image/jpeg', 0.92);
@@ -2780,6 +2888,7 @@ function retake(){
   ensureAudio();
   shotEl.classList.add('hide');
   capEl.classList.remove('hide');
+  layoutCapScene();                 // 回来之后按当前尺寸重摆一次
   if(!camStream) openCam(camFacing); else ensureCamBg();
 }
 
