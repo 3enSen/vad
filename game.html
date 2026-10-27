@@ -1055,11 +1055,25 @@ function updateScan(dt){
 /* =========================================================================
    7. 3D：把角色的 GLB 工作动画放到实景上
    ========================================================================= */
-const R3 = { ok:false, renderer:null, scene:null, camera:null, visH:0, visW:0,
+const R3 = { ok:false, flat:false, flatImg:null, flatT:0,
+             renderer:null, scene:null, camera:null, visH:0, visW:0,
              mixer:null, clip:null, group:null, shadow:null, cache:{} };
+
+/* 先自己探一次，别让 three.js 在不支持的机器上往控制台报红 */
+function webglSupported(){
+  try{
+    const cv = document.createElement('canvas');
+    const gl = cv.getContext('webgl') || cv.getContext('experimental-webgl');
+    if(!gl) return false;
+    const lose = gl.getExtension('WEBGL_lose_context');
+    if(lose) lose.loseContext();
+    return true;
+  }catch(e){ return false; }
+}
 
 function initR3(){
   if(!window.THREE || !window.GLTFLoader) return false;
+  if(!webglSupported()) return false;
   try{
     R3.renderer = new THREE.WebGLRenderer({ canvas: threeCv, antialias: true, alpha: true });
     R3.renderer.setClearColor(0x000000, 0);
@@ -1144,6 +1158,19 @@ async function showCharacter(key){
   loadTipEl.textContent = '正在请 ' + c.name + ' 上场…';
   loadTipEl.classList.add('show');
 
+  if(R3.flat){                       // 没有 WebGL：用 2D 立绘 + 干活小动作
+    const fi = new Image();
+    fi.src = c.img + Q;
+    await fi.decode().catch(() => {});
+    if(showingKey !== key) return;
+    R3.flatImg = fi;
+    R3.flatT = 0;
+    loadTipEl.classList.remove('show');
+    SFX.appear();
+    revealShowUI(c);
+    return;
+  }
+
   let gltf = null;
   try{
     gltf = await loadWorkModel(key);
@@ -1202,7 +1229,11 @@ async function showCharacter(key){
     R3.shadow.visible = true;
   }
 
-  // 文案
+  revealShowUI(c);
+}
+
+/* 展示页文案（3D / 2D 两条路共用） */
+function revealShowUI(c){
   showNameEl.textContent = c.name;
   showCapEl.textContent = c.cap;
   showNextBtn.textContent = allDone() ? '完成收集' : '继续找下一个';
@@ -1211,6 +1242,7 @@ async function showCharacter(key){
 
 /* 再看一遍：动作从头播 */
 function replayShow(){
+  if(R3.flat){ R3.flatT = 0; return; }
   if(showingKey && R3.cache[showingKey] && R3.mixer){
     const gltf = R3.cache[showingKey];
     if(gltf.animations && gltf.animations.length){
@@ -1225,6 +1257,8 @@ function hideShow(){
   showingKey = null;
   document.body.classList.remove('showing');
   showEl.classList.add('hide');
+  R3.flatImg = null;
+  if(R3.flat) return;              // 没有 WebGL 就没有 group/shadow
   while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
   R3.shadow.visible = false;
   R3.mixer = null;
@@ -1232,6 +1266,59 @@ function hideShow(){
 
 function syncShow(dt){
   if(R3.mixer) R3.mixer.update(dt);
+  if(R3.flat) R3.flatT += dt;
+}
+
+/* 没有 WebGL 时的角色：2D 立绘踩着拍子上下弹、左右轻摆，做出"在干活"的动态。
+   脚底落在画面 66% 处，和 3D 版站的位置一致。 */
+function drawFlatShow(){
+  const img = R3.flatImg;
+  if(!img || !img.naturalWidth) return;
+  const t  = R3.flatT;
+  const h  = H * 0.38;
+  const w  = h * img.naturalWidth / img.naturalHeight;
+  const cx = W / 2, baseY = H * 0.66;
+  const ph = Math.PI / 0.42;                       // 0.42s 一拍
+  const b  = Math.abs(Math.sin(t * ph));            // 0→1→0 的弹跳
+  const dy = -h * 0.05 * b;
+  const sq = 1 + 0.05 * (b - 0.5);                  // 落下去时压扁一点
+
+  // 地面投影（径向渐变，不用 filter，兼容老内核）
+  ctx.save();
+  const sw = w * 0.60, sh = Math.max(3, h * 0.055);
+  const g = ctx.createRadialGradient(cx, baseY, 0, cx, baseY, sw / 2);
+  g.addColorStop(0, 'rgba(0,0,0,' + (0.24 - 0.08 * b).toFixed(3) + ')');
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.ellipse(cx, baseY, sw / 2, sh, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(cx, baseY + dy - h / 2);
+  ctx.rotate(0.06 * Math.sin(t * ph * 2));
+  ctx.scale(1 / sq, sq);
+  ctx.drawImage(img, -w / 2, -h / 2, w, h);
+  ctx.restore();
+
+  // 两侧的动感弧线，随拍子冒出来
+  const a = 0.42 * (1 - b);
+  if(a > 0.02){
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,' + a.toFixed(3) + ')';
+    ctx.lineWidth = Math.max(2, h * 0.014);
+    ctx.lineCap = 'round';
+    for(let s = -1; s <= 1; s += 2){
+      const x = cx + s * w * 0.60, y = baseY + dy - h * 0.56;
+      ctx.beginPath();
+      ctx.arc(x, y, w * 0.085,
+              s > 0 ? -0.7 : Math.PI + 0.7,
+              s > 0 ?  0.7 : Math.PI - 0.7);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 /* =========================================================================
@@ -1786,6 +1873,8 @@ function render(){
   const needBg = (G.state === 'scan' || G.state === 'show' || G.state === 'capture');
   if(needBg) drawCamBg();
 
+  if(G.state === 'show' && R3.flat) drawFlatShow();
+
   if(G.state === 'capture'){
     if(capStep === 'face') paintScan();
     else paintFacePatch();
@@ -1873,16 +1962,12 @@ window.__WORK = {
 
 loadStore();
 initScan();
-if(initR3()){
-  resize();
-  requestAnimationFrame(ts => { lastTs = ts; loop(ts); });
-  bootScan();
-} else {
-  const el = document.createElement('div');
-  el.id = 'crash';
-  el.textContent = '这台浏览器不支持 WebGL，无法展示 3D 形象';
-  document.body.appendChild(el);
-}
+/* 没有 WebGL 也能上课：3D 只是展示手段，缺了就切 2D 立绘（R3.flat） */
+R3.flat = !initR3();
+if(R3.flat) threeCv.style.display = 'none';
+resize();
+requestAnimationFrame(ts => { lastTs = ts; loop(ts); });
+bootScan();
 
 })();
 </script>
