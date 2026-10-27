@@ -232,7 +232,7 @@
   #overTitle{font-size:clamp(24px,6.4vmin,30px);font-weight:800;letter-spacing:.02em}
   #overSub{margin-top:8px;font-size:13px;color:var(--ink2);letter-spacing:.04em}
   #tplCards{
-    display:flex;gap:12px;margin:24px 0 4px;justify-content:center;
+    display:flex;gap:12px;margin:24px 0 22px;justify-content:center;
     flex-wrap:nowrap;
   }
   .tplCard{
@@ -316,7 +316,9 @@
   }
   .stickerSrc{
     width:62px;height:62px;border-radius:16px;
-    background:#F4EFE8;border:2px dashed #DDD3C4;
+    background:linear-gradient(160deg,#FFFFFF 0%,#F2EBE1 100%);
+    border:2px solid #fff;
+    box-shadow:0 6px 14px rgba(20,16,14,.16), inset 0 -4px 8px rgba(20,16,14,.06);
     display:grid;place-items:center;cursor:grab;
     touch-action:none;overflow:hidden;
     transition:transform .18s ease;
@@ -332,7 +334,7 @@
   #shutterBtn{
     position:absolute;z-index:6;
     left:50%;transform:translateX(-50%);
-    bottom:calc(env(safe-area-inset-bottom,0px) + 116px);
+    bottom:calc(env(safe-area-inset-bottom,0px) + 172px);
     width:72px;height:72px;border-radius:50%;border:none;
     background:rgba(255,255,255,.96);
     display:grid;place-items:center;cursor:pointer;
@@ -393,7 +395,7 @@
     .btn{padding:13px 38px;font-size:15px}
     #stickerBar{bottom:calc(env(safe-area-inset-bottom,0px) + 8px);padding:9px 12px 10px}
     .stickerSrc{width:52px;height:52px}
-    #shutterBtn{bottom:calc(env(safe-area-inset-bottom,0px) + 104px);width:64px;height:64px}
+    #shutterBtn{bottom:calc(env(safe-area-inset-bottom,0px) + 150px);width:64px;height:64px}
     #shutterBtn .ring{width:52px;height:52px}
     #shotImg{max-height:48vh}
     .tplCard{width:min(28vw,112px);padding:12px 6px 10px}
@@ -1385,7 +1387,7 @@ function buildBar(){
     const c = CHARS[k];
     const d = document.createElement('div');
     d.className = 'wchip' + (G.collected[k] ? ' done' : (k === targetKey() ? ' cur' : ''));
-    d.innerHTML = SHAPE_SVG[c.shape] + '<span>寻找' + c.name + '</span>';
+    d.innerHTML = '<span>寻找' + c.name + '</span>';
     d.addEventListener('click', () => {
       if(G.state !== 'scan') return;
       if(G.collected[k]){ toast(c.name + ' 已经收集到啦'); return; }
@@ -1582,7 +1584,7 @@ function onStickerSrcDown(e, key){
     const r = el.getBoundingClientRect();
     const cx = r.left + r.width/2, cy = r.top + r.height/2;
     if(cx >= layerRect.left && cx <= layerRect.right && cy >= layerRect.top && cy <= layerRect.bottom){
-      const s = { key, el, x: r.left - layerRect.left, y: r.top - layerRect.top, w: r.width };
+      const s = { key, el, x: r.left - layerRect.left, y: r.top - layerRect.top, w: r.width, h: r.height };
       el.style.left = s.x + 'px';
       el.style.top  = s.y + 'px';
       el.style.transform = '';
@@ -1605,33 +1607,89 @@ function moveAt(ev, el, w, h){
   el.style.top  = (ev.clientY - layerRect.top - h/2) + 'px';
 }
 
-/* 已摆放的贴纸：拖动调整位置 */
+/* 统一应用贴纸位置与尺寸 */
+function applyStickerPos(el, s){
+  el.style.left = s.x + 'px';
+  el.style.top  = s.y + 'px';
+  el.style.width  = s.w + 'px';
+  el.style.height = s.h + 'px';
+}
+
+/* 已摆放的贴纸：单指拖动位置，双指缩放大小 */
 function bindStickerDrag(el, s){
+  const pointers = new Map();   // pointerId -> {x, y}
+  let startDist = 0, startW = 0, startH = 0;
+  let dragBase = null;          // 单指拖动基准
+  let pinchBase = null;         // 双指缩放基准
+
   el.addEventListener('pointerdown', e => {
     e.preventDefault();
+    try{ el.setPointerCapture(e.pointerId); }catch(_){}
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     el.classList.add('dragging');
     el.style.zIndex = 20;
-    const layerRect = stickerLayer.getBoundingClientRect();
-    const startX = e.clientX, startY = e.clientY;
-    const origX = s.x, origY = s.y;
-    const onMove = ev => {
-      ev.preventDefault();
-      s.x = origX + (ev.clientX - startX);
-      s.y = origY + (ev.clientY - startY);
-      s.x = clamp(s.x, -s.w*0.5, layerRect.width - s.w*0.5);
-      s.y = clamp(s.y, -s.w*0.5, layerRect.height - s.w*0.5);
-      el.style.left = s.x + 'px';
-      el.style.top  = s.y + 'px';
-    };
-    const onUp = () => {
+
+    if(pointers.size === 1){
+      const p = pointers.get(e.pointerId);
+      dragBase = { px: p.x, py: p.y, ox: s.x, oy: s.y };
+      pinchBase = null;
+    } else if(pointers.size === 2){
+      const pts = [...pointers.values()];
+      startDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      startW = s.w; startH = s.h;
+      const mx = (pts[0].x + pts[1].x) / 2;
+      const my = (pts[0].y + pts[1].y) / 2;
+      pinchBase = { mx, my, ox: s.x + s.w/2, oy: s.y + s.h/2 };
+      dragBase = null;
+    }
+  });
+
+  el.addEventListener('pointermove', e => {
+    if(!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if(pointers.size === 1 && dragBase){
+      // 单指拖动
+      const p = pointers.get(e.pointerId);
+      s.x = dragBase.ox + (p.x - dragBase.px);
+      s.y = dragBase.oy + (p.y - dragBase.py);
+      s.x = clamp(s.x, -s.w*0.5, stickerLayer.offsetWidth  - s.w*0.5);
+      s.y = clamp(s.y, -s.w*0.5, stickerLayer.offsetHeight - s.h*0.5);
+      applyStickerPos(el, s);
+    } else if(pointers.size === 2 && pinchBase){
+      // 双指缩放（以两指中心为锚点）
+      const pts = [...pointers.values()];
+      const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+      const ratio = startDist > 0 ? dist / startDist : 1;
+      const maxW = Math.min(stickerLayer.offsetWidth, stickerLayer.offsetHeight) * 0.9;
+      const nw = clamp(startW * ratio, 44, maxW);
+      const nh = nw * (startH / startW);
+      s.w = nw; s.h = nh;
+      s.x = pinchBase.ox - nw/2;
+      s.y = pinchBase.oy - nh/2;
+      s.x = clamp(s.x, -s.w*0.5, stickerLayer.offsetWidth  - s.w*0.5);
+      s.y = clamp(s.y, -s.w*0.5, stickerLayer.offsetHeight - s.h*0.5);
+      applyStickerPos(el, s);
+    }
+  });
+
+  const onUp = e => {
+    if(!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if(pointers.size === 0){
       el.classList.remove('dragging');
       el.style.zIndex = '';
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
-    };
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
-  });
+      dragBase = null; pinchBase = null;
+    } else if(pointers.size === 1){
+      // 从双指回到单指：重新校准拖动基准
+      const p = pointers.values().next().value;
+      dragBase = { px: p.x, py: p.y, ox: s.x, oy: s.y };
+      pinchBase = null;
+    }
+  };
+  el.addEventListener('pointerup', onUp);
+  el.addEventListener('pointercancel', onUp);
+  el.addEventListener('lostpointercapture', onUp);
 }
 
 /* 打开拍照页 */
@@ -1680,7 +1738,7 @@ function addStickerDefault(key, i, n, w){
   const y = layerRect.height * 0.30;
   el.style.left = x + 'px';
   el.style.top  = y + 'px';
-  const s = { key, el, x, y, w };
+  const s = { key, el, x, y, w, h };
   bindStickerDrag(el, s);
   placedStickers.push(s);
 }
@@ -1731,7 +1789,7 @@ function shoot(){
     const img = CHAR_IMG(s.key);
     if(!img || !img.naturalWidth) return;
     const dw = s.w * scX;
-    const dh = dw * (img.naturalHeight / img.naturalWidth);
+    const dh = (s.h != null) ? s.h * scY : dw * (img.naturalHeight / img.naturalWidth);
     g.drawImage(img, s.x * scX, s.y * scY, dw, dh);
   });
 
