@@ -107,7 +107,9 @@
     box-shadow:0 4px 14px rgba(20,16,14,.08);
     font-size:12.5px;font-weight:700;letter-spacing:.05em;
     color:#B9B0A6;transition:all .25s ease;
+    cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;
   }
+  .wchip:active{transform:scale(.94)}
   .wchip svg{width:14px;height:14px;display:block}
   .wchip svg *{fill:#CFC6BB;transition:fill .25s}
   .wchip.cur{
@@ -172,6 +174,16 @@
   #camFail{margin-top:0}
   #scanGo{display:none}
   #scanGo.show{display:block}
+  #scanGoSub{
+    display:none;
+    font-size:11.5px;color:#fff;letter-spacing:.04em;
+    text-align:center;line-height:1.5;
+    padding:5px 14px;border-radius:99px;
+    background:rgba(20,16,14,.40);
+    -webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);
+    margin-top:-4px;
+  }
+  #scanGoSub.show{display:block}
 
   /* ---------- 工作展示 overlay（叠在实景上） ---------- */
   #showUI{
@@ -237,119 +249,104 @@
     padding:3px 9px;border-radius:99px;background:#F1EBE4;
   }
   #overHint{margin-top:12px;font-size:12px;color:var(--ink3);letter-spacing:.04em}
+  .emptyCards{
+    font-size:13px;color:var(--ink3);letter-spacing:.04em;
+    padding:26px 30px;text-align:center;
+  }
 
-  /* ---------- 拍照：识脸 + 合照 ---------- */
+  /* ---------- 拍照：全屏实景 + 可拖动伙伴贴纸 ---------- */
   #capture{
     justify-content:flex-start;
-    background:#fff;
-    padding:calc(env(safe-area-inset-top,0px) + 12px) 0 calc(env(safe-area-inset-bottom,0px) + 20px);
-  }
-  #capture[data-step="pose"]{background:#F5F0E7}
-  #capture[data-step="face"] #tplStrip,
-  #capture[data-step="face"] #capStage,
-  #capture[data-step="pose"] #faceScan,
-  #capture[data-step="pose"] #capFlip{display:none}
-
-  #faceScan{
-    flex:1 1 auto;min-height:0;width:100%;
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    gap:16px;padding:0 24px;
-  }
-  #scanWrap{position:relative;flex:0 0 auto;display:grid;place-items:center}
-  #scanCv{
-    display:block;width:76vw;height:76vw;
-    max-width:42vh;max-height:42vh;
-    border-radius:50%;background:#EFE8DE;
-    box-shadow:0 0 0 2px rgba(20,16,14,.10), 0 24px 56px rgba(20,16,14,.16);
-  }
-  #scanRing{
-    position:absolute;left:50%;top:50%;
-    width:calc(76vw + 24px);height:calc(76vw + 24px);
-    max-width:calc(42vh + 24px);max-height:calc(42vh + 24px);
-    transform:translate(-50%,-50%);
-    border-radius:50%;border:2px dashed rgba(20,16,14,.13);
-    pointer-events:none;
-  }
-  #scanTitle{font-size:16.5px;font-weight:800;color:var(--ink);letter-spacing:.02em}
-  #scanSub{font-size:11.5px;color:var(--ink3);letter-spacing:.04em;line-height:1.6}
-
-  #tplStrip{
-    display:flex;gap:9px;width:100%;
-    padding:6px 18px 14px;
-    overflow-x:auto;overflow-y:hidden;
-    align-items:flex-end;
-    flex:0 0 auto;scrollbar-width:none;
-    -webkit-overflow-scrolling:touch;
-  }
-  #tplStrip > .tplChip:first-child{margin-left:auto}
-  #tplStrip > .tplChip:last-child{margin-right:auto}
-  #tplStrip::-webkit-scrollbar{display:none}
-  #tplStrip:empty{display:none}
-  .tplChip{
-    position:relative;flex:0 0 auto;
-    width:76px;height:56px;padding:0;
-    border:2px solid transparent;border-radius:12px;
-    background:#F1EBE4;overflow:hidden;cursor:pointer;font-family:inherit;
-    transition:transform .22s cubic-bezier(.34,1.56,.64,1), border-color .2s;
-  }
-  .tplChip img{position:absolute;inset:2px 2px 13px;width:calc(100% - 4px);height:calc(100% - 15px);object-fit:contain;display:block}
-  .tplChip .who{
-    position:absolute;left:0;right:0;bottom:0;height:14px;
-    display:grid;place-items:center;
-    font-size:9px;font-weight:800;letter-spacing:.08em;
-    color:#7C4A12;background:rgba(255,209,102,.94);
-  }
-  .tplChip.sel{
-    border-color:var(--ink);
-    transform:translateY(-4px);
-    box-shadow:0 9px 20px rgba(20,16,14,.18);
+    background:transparent;
+    padding:0;
   }
 
-  #capStage{
-    position:relative;flex:1 1 auto;
-    width:100%;min-height:0;background:transparent;
-    pointer-events:none;
-  }
-  /* 占位模板卡：等新图来了，这里换成 <img> 即可 */
-  #capTplBox{
-    position:absolute;display:none;
-    background:#FFFFFF;border:3px dashed #D8CFC2;border-radius:36px;
-    display:none;
-    flex-direction:column;align-items:center;justify-content:center;gap:6px;
-    box-shadow:0 16px 32px rgba(20,16,14,.14);
+  /* 已摆放的伙伴层：铺满，接收拖动 */
+  #stickerLayer{
+    position:absolute;inset:0;z-index:2;
     overflow:hidden;
   }
-  #capTplBox img{width:52%;height:auto;object-fit:contain;opacity:.9}
-  #capTplBox .ph-t{font-size:12px;font-weight:700;letter-spacing:.10em;color:#B5A897}
-  #capFaceCv{
-    position:absolute;display:none;pointer-events:none;
-    border-radius:50%;
-    filter:drop-shadow(0 2px 5px rgba(20,16,14,.34));
+  .sticker{
+    position:absolute;touch-action:none;
+    filter:drop-shadow(0 8px 16px rgba(20,16,14,.28));
+    will-change:transform;
   }
-  #capFlip{
-    position:absolute;z-index:5;
-    right:14px;top:calc(env(safe-area-inset-top,0px) + 92px);
-    width:42px;height:42px;border-radius:50%;border:none;
+  .sticker img{
+    display:block;width:100%;height:100%;
+    object-fit:contain;pointer-events:none;
+    -webkit-user-drag:none;user-select:none;
+  }
+  .sticker.dragging{
+    filter:drop-shadow(0 16px 28px rgba(20,16,14,.40));
+    z-index:10;
+  }
+
+  /* 左上角返回 */
+  #capBack{
+    position:absolute;z-index:6;
+    left:14px;top:calc(env(safe-area-inset-top,0px) + 14px);
+    width:44px;height:44px;border-radius:50%;border:none;
     background:rgba(20,16,14,.46);color:#fff;
     display:grid;place-items:center;cursor:pointer;
     backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
     box-shadow:0 6px 16px rgba(20,16,14,.22);
-    transition:transform .18s ease, background .2s;
+    transition:transform .18s ease;
   }
-  #capFlip:active{transform:scale(.92)}
-  #capFlip svg{width:20px;height:20px}
-  #capture[data-step="face"] #capFlip{
-    top:calc(env(safe-area-inset-top,0px) + 14px);
-    background:rgba(20,16,14,.055);color:var(--ink2);box-shadow:none;
+  #capBack:active{transform:scale(.92)}
+  #capBack svg{width:22px;height:22px}
+
+  /* 底部白色伙伴栏 */
+  #stickerBar{
+    position:absolute;z-index:6;
+    left:14px;right:14px;
+    bottom:calc(env(safe-area-inset-bottom,0px) + 14px);
+    background:rgba(255,255,255,.94);
+    border-radius:22px;
+    box-shadow:0 10px 30px rgba(20,16,14,.22);
+    padding:12px 14px 14px;
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   }
-  .capActions{
+  #stickerBarHint{
+    font-size:11px;font-weight:700;letter-spacing:.06em;
+    color:#B5A897;text-align:center;margin-bottom:10px;
+  }
+  #stickerBarRow{
     display:flex;gap:12px;align-items:center;justify-content:center;
-    margin-top:18px;width:100%;
+    flex-wrap:wrap;
   }
-  .capActions .btn{margin-top:0}
-  #capBack{padding:15px 34px}
-  #shootBtn{padding:15px 52px}
-  #shootBtn.wait{opacity:.42;transition:opacity .2s}
+  .stickerSrc{
+    width:62px;height:62px;border-radius:16px;
+    background:#F4EFE8;border:2px dashed #DDD3C4;
+    display:grid;place-items:center;cursor:grab;
+    touch-action:none;overflow:hidden;
+    transition:transform .18s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .stickerSrc img{
+    width:84%;height:84%;object-fit:contain;pointer-events:none;
+    -webkit-user-drag:none;user-select:none;
+  }
+  .stickerSrc:active{transform:scale(.92)}
+
+  /* 圆形快门 */
+  #shutterBtn{
+    position:absolute;z-index:6;
+    left:50%;transform:translateX(-50%);
+    bottom:calc(env(safe-area-inset-bottom,0px) + 116px);
+    width:72px;height:72px;border-radius:50%;border:none;
+    background:rgba(255,255,255,.96);
+    display:grid;place-items:center;cursor:pointer;
+    box-shadow:0 8px 24px rgba(20,16,14,.30);
+    transition:transform .15s ease;
+  }
+  #shutterBtn:active{transform:translateX(-50%) scale(.90)}
+  #shutterBtn .ring{
+    display:block;width:58px;height:58px;border-radius:50%;
+    border:3px solid #14100E;
+    background:transparent;
+    transition:background .15s ease;
+  }
+  #shutterBtn:active .ring{background:#14100E}
 
   #shotSheet{justify-content:center;gap:14px;background:#EFE8DE}
   #shotTitle{
@@ -394,12 +391,10 @@
   @media (max-height: 660px){
     #scanFrame{width:min(56vmin,208px);height:min(56vmin,208px);border-radius:24px}
     .btn{padding:13px 38px;font-size:15px}
-    #capture{padding-bottom:calc(env(safe-area-inset-bottom,0px) + 14px)}
-    #tplStrip{padding-bottom:6px;gap:7px}
-    .tplChip{width:66px;height:50px;border-radius:11px}
-    .capActions{margin-top:13px}
-    #shootBtn{padding:13px 44px}
-    #capBack{padding:13px 28px}
+    #stickerBar{bottom:calc(env(safe-area-inset-bottom,0px) + 8px);padding:9px 12px 10px}
+    .stickerSrc{width:52px;height:52px}
+    #shutterBtn{bottom:calc(env(safe-area-inset-bottom,0px) + 104px);width:64px;height:64px}
+    #shutterBtn .ring{width:52px;height:52px}
     #shotImg{max-height:48vh}
     .tplCard{width:min(28vw,112px);padding:12px 6px 10px}
   }
@@ -429,7 +424,8 @@
     <div class="scanFoot">
       <div id="scanDebug">正在开启摄像头…</div>
       <button class="btn ghost" id="camFail" type="button" hidden>摄像头不可用 · 先直接体验</button>
-      <button class="btn" id="scanGo" type="button">去看我的模板</button>
+      <button class="btn" id="scanGo" type="button">查看已收集伙伴</button>
+      <div id="scanGoSub">已收集的伙伴可以和你一起合照哦</div>
     </div>
   </div>
 
@@ -451,53 +447,36 @@
 
   <div id="loadTip">正在请它上场…</div>
 
-  <!-- 收集完成 -->
+  <!-- 已收集伙伴 -->
   <div class="sheet light hide" id="overSheet">
-    <div id="overTitle">三个都找到啦</div>
-    <div id="overSub">合照模板已收齐，和它们拍一张吧</div>
+    <div id="overTitle">已收集的伙伴</div>
+    <div id="overSub">扫描贴纸就能认识新的伙伴哦</div>
     <div id="tplCards"></div>
-    <div id="overHint">模板图之后会换成正式版本</div>
     <div class="capActions">
-      <button class="btn ghost" id="laterBtn" type="button">后面再拍</button>
+      <button class="btn ghost" id="laterBtn" type="button">继续寻找</button>
       <button class="btn" id="photoBtn" type="button">现在拍照</button>
     </div>
   </div>
 
-  <!-- 拍照：第一步识脸（白底 + 圆圈），第二步把圆圈脸贴到模板上 -->
-  <div class="sheet hide" id="capture" data-step="face">
-    <div id="tplStrip"></div>
+  <!-- 拍照：全屏实景 + 可拖动伙伴贴纸 -->
+  <div class="sheet clear hide" id="capture">
+    <div id="stickerLayer"></div>
 
-    <div id="faceScan">
-      <div id="scanWrap">
-        <canvas id="scanCv"></canvas>
-        <i id="scanRing"></i>
-      </div>
-      <div id="scanTitle">把脸放进圆圈里</div>
-      <div id="scanSub">圈里这一块会贴到合照模板上</div>
-    </div>
-
-    <div id="capStage">
-      <div id="capTplBox">
-        <img id="capTplImg" alt="">
-        <span class="ph-t">合照模板 · 待替换</span>
-      </div>
-      <canvas id="capFaceCv"></canvas>
-    </div>
-
-    <button id="capFlip" type="button" aria-label="反转镜头">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+    <button id="capBack" type="button" aria-label="返回">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
            stroke-linecap="round" stroke-linejoin="round">
-        <path d="M4.4 9.2A4 4 0 0 1 8.3 5.6h1.9"/>
-        <path d="M19.6 14.8a4 4 0 0 1-3.9 3.6h-1.9"/>
-        <path d="M8.9 3.1 11 5.2 8.9 7.3"/>
-        <path d="M15.1 16.7 13 18.8l2.1 2.1"/>
+        <path d="M15 5 8 12l7 7"/>
       </svg>
     </button>
 
-    <div class="capActions">
-      <button class="btn ghost" id="capBack" type="button">返回</button>
-      <button class="btn" id="shootBtn" type="button">拍照</button>
+    <div id="stickerBar">
+      <div id="stickerBarHint">把伙伴拖出来一起合照</div>
+      <div id="stickerBarRow"></div>
     </div>
+
+    <button id="shutterBtn" type="button" aria-label="拍照">
+      <span class="ring"></span>
+    </button>
   </div>
 
   <!-- 拍照结果 -->
@@ -618,6 +597,7 @@ const scanTipEl = $('scanTip');
 const scanDbg   = $('scanDebug');
 const camFailBtn= $('camFail');
 const scanGoBtn = $('scanGo');
+const scanGoSub = $('scanGoSub');
 const tplBar    = $('tplBar');
 const showEl    = $('showUI');
 const showNameEl= $('showName');
@@ -628,16 +608,10 @@ const loadTipEl = $('loadTip');
 const overEl    = $('overSheet');
 const tplCards  = $('tplCards');
 const capEl     = $('capture');
-const capStage  = $('capStage');
-const capTplBox = $('capTplBox');
-const capTplImg = $('capTplImg');
-const faceCvEl  = $('capFaceCv');
-const faceScanEl= $('faceScan');
-const scanCv    = $('scanCv');
-const tplStrip  = $('tplStrip');
-const capFlipBtn= $('capFlip');
+const stickerLayer = $('stickerLayer');
+const stickerBarRow = $('stickerBarRow');
 const capBackBtn= $('capBack');
-const shootBtnEl= $('shootBtn');
+const shutterBtn= $('shutterBtn');
 const shotEl    = $('shotSheet');
 const shotImg   = $('shotImg');
 const toastEl   = $('toast');
@@ -1034,8 +1008,8 @@ function updateScan(dt){
       SCAN.wrongHits++;
       if(SCAN.wrongHits >= 3){
         const other = ORDER.map(k => CHARS[k]).find(c => c.shape === r.shape);
-        if(other) scanDbg.textContent = '这是 ' + other.name + ' 的' + other.shapeName
-                        + '，先找 ' + target.name + ' 的' + target.shapeName;
+        if(other) scanDbg.textContent = '这是 ' + other.name + ' 的贴纸'
+                        + '，先找 ' + target.name + ' 的贴纸';
       }
     }
   } else {
@@ -1404,14 +1378,23 @@ function drawFlatShow(){
    ========================================================================= */
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
-/* 顶部进度条 */
+/* 顶部进度条：三个「寻找xx」，点击切换扫描目标 */
 function buildBar(){
   tplBar.innerHTML = '';
   ORDER.forEach(k => {
     const c = CHARS[k];
     const d = document.createElement('div');
     d.className = 'wchip' + (G.collected[k] ? ' done' : (k === targetKey() ? ' cur' : ''));
-    d.innerHTML = SHAPE_SVG[c.shape] + '<span>' + c.name + '</span>';
+    d.innerHTML = SHAPE_SVG[c.shape] + '<span>寻找' + c.name + '</span>';
+    d.addEventListener('click', () => {
+      if(G.state !== 'scan') return;
+      if(G.collected[k]){ toast(c.name + ' 已经收集到啦'); return; }
+      if(G.idx === ORDER.indexOf(k)) return;
+      G.idx = ORDER.indexOf(k);
+      buildBar();
+      buildTip();
+      SCAN.hits = 0; SCAN.wrongHits = 0;
+    });
     tplBar.appendChild(d);
   });
 }
@@ -1419,9 +1402,7 @@ function buildBar(){
 /* 扫描页提示语 */
 function buildTip(){
   const c = CHARS[targetKey()];
-  scanTipEl.innerHTML = '找一找 <b>' + c.name + '</b> 的'
-    + '<span class="sh">' + SHAPE_SVG[c.shape] + '</span>'
-    + '图形<br>把图形放进框里，' + c.name + ' 就会出现';
+  scanTipEl.innerHTML = '扫描 <b>' + c.name + '</b> 的贴纸<br>让我们来看看它在干什么呀';
 }
 
 /* 启动：一进来就是识别页 */
@@ -1442,7 +1423,9 @@ async function bootScan(){
   scanDbg.textContent = '';
   scanFrameEl.classList.remove('warm');
   SCAN.hits = 0; SCAN.wrongHits = 0;
-  scanGoBtn.classList.toggle('show', allDone());
+  const hasAny = ORDER.some(k => G.collected[k]);
+  scanGoBtn.classList.toggle('show', hasAny);
+  scanGoSub.classList.toggle('show', hasAny);
 
   const ok = await openCam('environment');
   if(!ok){
@@ -1484,284 +1467,174 @@ function showNext(){
   bootScan();
 }
 
-/* 结算：三个模板卡 */
+/* 结算：已收集的伙伴 */
 function showOver(){
   G.state = 'over';
   hideShow();
   scanSheet.classList.add('hide');
   SFX.win();
   buildCards();
+  const n = ORDER.filter(k => G.collected[k]).length;
+  const t = $('overTitle'), s = $('overSub');
+  if(allDone()){
+    t.textContent = '三个伙伴都找到啦';
+    s.textContent = '和它们一起拍张合照吧';
+  } else {
+    t.textContent = '已收集的伙伴';
+    s.textContent = '继续扫描，认识更多伙伴吧';
+  }
+  $('photoBtn').style.display = n > 0 ? '' : 'none';
   overEl.classList.remove('hide');
 }
 
 function buildCards(){
   tplCards.innerHTML = '';
   ORDER.forEach(k => {
+    if(!G.collected[k]) return;      // 收集了谁就显示谁
     const c = CHARS[k];
     const d = document.createElement('div');
     d.className = 'tplCard';
     d.innerHTML = '<img src="' + c.img + Q + '" alt=""><span class="nm">' + c.name
-                + '</span><span class="st">模板待替换</span>';
+                + '</span><span class="st">已收集</span>';
     tplCards.appendChild(d);
   });
+  // 一个都没有时给个空态
+  if(!tplCards.children.length){
+    const e = document.createElement('div');
+    e.className = 'emptyCards';
+    e.textContent = '还没有收集到伙伴，去扫描贴纸吧';
+    tplCards.appendChild(e);
+  }
 }
 
-/* 「后面再拍」：回扫描页，模板留着（localStorage 已存） */
+/* 「继续寻找」：回扫描页 */
 function collectLater(){
   overEl.classList.add('hide');
-  toast('模板已经收好，随时回来拍');
   bootScan();
 }
 
 /* =========================================================================
-   9. 拍照（识脸圆圈 → 贴到模板 → 出片）
+/* =========================================================================
+   9. 拍照：全屏实景 + 可拖动伙伴贴纸
    ========================================================================= */
 const OUT_W = 1080, OUT_H = 1350;
-const TPL_W  = 0.80;     // 占位模板卡宽 / 画框宽
-const TPL_H  = 0.60;     // 占位模板卡高 / 画框高
-const TPL_Y  = 0.52;     // 卡片竖直落点
-const HEAD_FB = 0.262;   // 圆圈脸直径 / 画框宽
-const FACE_CY = 0.40;    // 圆圈脸圆心在卡片里的高度（占卡片高）
 
 let shotDataUrl = '';
-let capStep = 'face';              // 'face' 识脸 → 'pose' 合照
-let faceShot = null;
-let faceShotMirror = false;
-let capGeo = null;
-let tplSel = null;                 // 当前选中的角色模板
+let placedStickers = [];        // { key, el, x, y, w }  x/y = 左上角(CSS px)，w = 宽
+let stickerSeq = 0;
 
-/* 圆圈在屏幕上的位置 */
-function scanRect(){
-  if(!scanCv) return null;
-  const r = scanCv.getBoundingClientRect();
-  if(r.width < 8) return null;
-  return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, side: Math.min(r.width, r.height) };
+/* 伙伴贴纸默认尺寸（CSS px，占画面宽比例） */
+const STICKER_W = () => Math.round(Math.min(W, H) * 0.28);
+
+/* 清空所有已摆放贴纸 */
+function clearStickers(){
+  placedStickers.forEach(s => { if(s.el && s.el.parentNode) s.el.parentNode.removeChild(s.el); });
+  placedStickers = [];
 }
 
-function faceSrcRect(rect){
-  const v = camEl;
-  if(!v || v.readyState < 2 || !v.videoWidth) return null;
-  const vw = v.videoWidth, vh = v.videoHeight;
-  const sc = Math.max(W / vw, H / vh);
-  const offX = (W - vw * sc) / 2, offY = (H - vh * sc) / 2;
-
-  const R = rect || scanRect();
-  if(!R) return null;
-  const side = R.side;
-  let sx = (R.cx - side / 2 - offX) / sc;
-  let sy = (R.cy - side / 2 - offY) / sc;
-  const sSize = side / sc;
-  if(camFacing === 'user') sx = vw - (sx + sSize);
-
-  const kx = clamp(sx, 0, Math.max(vw - 1, 0));
-  const ky = clamp(sy, 0, Math.max(vh - 1, 0));
-  const kw = Math.min(sSize, vw - kx);
-  const kh = Math.min(sSize, vh - ky);
-  if(kw < 1 || kh < 1) return null;
-  return { v, kx, ky, kw, kh };
-}
-
-function faceFrame(){
-  if(faceShot){
-    return { img: faceShot, sx: 0, sy: 0, sw: faceShot.width, sh: faceShot.height, mirror: faceShotMirror };
-  }
-  const s = faceSrcRect();
-  if(!s) return null;
-  return { img: s.v, sx: s.kx, sy: s.ky, sw: s.kw, sh: s.kh, mirror: camFacing === 'user' };
-}
-
-/* 识脸页圆圈：每帧把实景画进去 */
-function paintScan(){
-  const el = scanCv;
-  if(!el) return;
-  const cssW = el.clientWidth;
-  if(cssW < 8) return;
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const px  = Math.max(2, Math.round(cssW * dpr));
-  if(el.width !== px){ el.width = px; el.height = px; }
-  const g = el.getContext('2d');
-  g.clearRect(0, 0, px, px);
-
-  const src = faceSrcRect();
-  if(!src){
-    g.fillStyle = '#EFE8DE';
-    g.fillRect(0, 0, px, px);
-    shootBtnEl.classList.add('wait');
+/* 底部伙伴栏：收集了谁就显示谁 */
+function buildStickerBar(){
+  stickerBarRow.innerHTML = '';
+  const has = ORDER.filter(k => G.collected[k]);
+  if(!has.length){
+    document.getElementById('stickerBarHint').textContent = '还没有收集到伙伴，先去扫描贴纸吧';
     return;
   }
-  shootBtnEl.classList.remove('wait');
-  g.save();
-  if(camFacing === 'user'){ g.translate(px, 0); g.scale(-1, 1); }
-  g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, px, px);
-  g.restore();
-}
-
-/* 合照页：脸上那张圆圈贴片 */
-function paintFacePatch(){
-  if(!capGeo) return;
-  const el = faceCvEl;
-  if(!el || !el.width) return;
-  const g = el.getContext('2d');
-  const w = el.width, h = el.height;
-  g.clearRect(0, 0, w, h);
-
-  const f = faceFrame();
-  if(!f){
-    g.fillStyle = '#E8DFD2';
-    g.fillRect(0, 0, w, h);
-    return;
-  }
-  g.save();
-  if(f.mirror){ g.translate(w, 0); g.scale(-1, 1); }
-  g.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, 0, 0, w, h);
-  g.restore();
-}
-
-/* 构图：占位模板卡摆哪儿、圆圈脸摆哪儿。预览和成片同一套公式。
-   等正式模板图到位后，在 t.src 里填上图片路径、补 faceX/faceY 就能直接换。 */
-const TEMPLATES = ORDER.map(k => ({ key:k, src:null, faceX:0.5, faceY:0.34, seat:0 }));
-
-function capCompose(bw, bh){
-  if(!tplSel) return null;
-  const t = tplSel;
-
-  let dh = bh * TPL_H;
-  let dw = bw * TPL_W;
-  if(dw / dh > 1.25) dw = dh * 1.25;                 // 卡片别太扁
-
-  const x = (bw - dw) / 2;
-  const y = (bh - dh) * TPL_Y;
-
-  const fd = bw * HEAD_FB;
-  let cx, cy;
-  if(t.src){
-    cx = x + t.faceX * dw;
-    cy = y + t.faceY * dh;
-  } else {
-    cx = x + dw / 2;
-    cy = y + dh * FACE_CY;
-  }
-  return { x, y, dw, dh, fd, cx, cy };
-}
-
-/* 摆卡片与脸：画框按成片 4:5 塞进取景区正中 */
-function layoutCapScene(){
-  const r = capStage.getBoundingClientRect();
-  if(capStep !== 'pose' || !tplSel || r.width < 20 || r.height < 20){
-    capGeo = null;
-    capTplBox.style.display = 'none';
-    faceCvEl.style.display = 'none';
-    return;
-  }
-
-  const bw = Math.min(r.width, r.height * OUT_W / OUT_H);
-  const bh = bw * OUT_H / OUT_W;
-  const bx = (r.width  - bw) / 2;
-  const by = (r.height - bh) / 2;
-
-  const c = capCompose(bw, bh);
-
-  const left = bx + c.x, top = by + c.y;
-  capTplBox.style.left   = left + 'px';
-  capTplBox.style.top    = top + 'px';
-  capTplBox.style.width  = c.dw + 'px';
-  capTplBox.style.height = c.dh + 'px';
-  capTplBox.style.display = 'flex';
-  capTplImg.style.display = tplSel.src ? 'block' : 'none';
-
-  const boxL = bx + c.cx - c.fd / 2;
-  const boxT = by + c.cy - c.fd / 2;
-
-  faceCvEl.style.left   = boxL + 'px';
-  faceCvEl.style.top    = boxT + 'px';
-  faceCvEl.style.width  = c.fd + 'px';
-  faceCvEl.style.height = c.fd + 'px';
-  faceCvEl.style.display = 'block';
-
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const cw  = Math.max(2, Math.round(c.fd * dpr));
-  if(faceCvEl.width !== cw || faceCvEl.height !== cw){ faceCvEl.width = cw; faceCvEl.height = cw; }
-
-  capGeo = { fx: r.left + boxL, fy: r.top + boxT, fd: c.fd };
-
-  paintFacePatch();
-}
-
-onResizeCapture = () => {
-  if(G.state !== 'capture') return;
-  if(capStep === 'pose') layoutCapScene();
-  else paintScan();
-};
-
-function buildStripSel(){
-  const cur = tplSel ? tplSel.key : '';
-  Array.prototype.forEach.call(tplStrip.children, c => {
-    c.classList.toggle('sel', c.dataset.key === cur);
-  });
-}
-
-function selectTemplate(t){
-  tplSel = t || null;
-  if(tplSel && tplSel.src){
-    capTplImg.src = tplSel.src + Q;
-  } else {
-    capTplImg.removeAttribute('src');
-  }
-  layoutCapScene();
-  buildStripSel();
-}
-
-/* 上方一行：已收集的模板缩略图（占位：角色立绘） */
-function buildTemplateStrip(){
-  tplStrip.innerHTML = '';
-  ORDER.forEach(k => {
-    if(!G.collected[k]) return;
+  document.getElementById('stickerBarHint').textContent = '把伙伴拖出来一起合照';
+  has.forEach(k => {
     const c = CHARS[k];
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = 'tplChip';
+    const b = document.createElement('div');
+    b.className = 'stickerSrc';
     b.dataset.key = k;
-    b.innerHTML = '<img src="' + c.img + Q + '" alt=""><span class="who">' + c.name + '</span>';
-    b.addEventListener('click', () => { ensureAudio(); selectTemplate(TEMPLATES.find(t => t.key === k)); });
-    tplStrip.appendChild(b);
+    b.innerHTML = '<img src="' + c.img + Q + '" alt="' + c.name + '">';
+    b.addEventListener('pointerdown', e => onStickerSrcDown(e, k));
+    stickerBarRow.appendChild(b);
   });
-  const pick = TEMPLATES.find(t => t.key === targetKey()) || TEMPLATES[0];
-  selectTemplate(pick);
 }
 
-function setCapStep(step){
-  capStep = step === 'pose' ? 'pose' : 'face';
-  capEl.dataset.step = capStep;
+/* 从伙伴栏按下：生成一个跟随手指的贴纸 */
+function onStickerSrcDown(e, key){
+  e.preventDefault();
+  const c = CHARS[key];
+  const w = STICKER_W();
+  const img = CHAR_IMG(key);
+  const rect = img.naturalWidth ? (img.naturalWidth / Math.max(img.naturalHeight,1)) : 1;
+  const h = Math.round(w / Math.max(rect, 0.3));
+  const el = document.createElement('div');
+  el.className = 'sticker dragging';
+  el.innerHTML = '<img src="' + c.img + Q + '" alt="' + c.name + '">';
+  el.style.width = w + 'px';
+  el.style.height = h + 'px';
+  stickerLayer.appendChild(el);
 
-  const pose = capStep === 'pose';
-  capBackBtn.textContent = pose ? '重拍' : '返回';
-  shootBtnEl.textContent = pose ? '完成' : '拍照';
-  shootBtnEl.classList.remove('wait');
+  const layerRect = stickerLayer.getBoundingClientRect();
+  moveAt(e, el, w, h);
+  el.style.zIndex = 20;
 
-  if(pose){
-    buildStripSel();
-    requestAnimationFrame(() => layoutCapScene());
-  } else {
-    layoutCapScene();
-    requestAnimationFrame(() => paintScan());
-  }
+  const onMove = ev => { ev.preventDefault(); moveAt(ev, el, w, h); };
+  const onUp = ev => {
+    el.removeEventListener('pointermove', onMove);
+    el.removeEventListener('pointerup', onUp);
+    el.removeEventListener('pointercancel', onUp);
+    el.classList.remove('dragging');
+    el.style.zIndex = '';
+    // 落点：中心在 layer 内则落位，否则弹回（移除）
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width/2, cy = r.top + r.height/2;
+    if(cx >= layerRect.left && cx <= layerRect.right && cy >= layerRect.top && cy <= layerRect.bottom){
+      const s = { key, el, x: r.left - layerRect.left, y: r.top - layerRect.top, w: r.width };
+      el.style.left = s.x + 'px';
+      el.style.top  = s.y + 'px';
+      el.style.transform = '';
+      bindStickerDrag(el, s);
+      placedStickers.push(s);
+    } else {
+      el.parentNode.removeChild(el);
+    }
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
+  document.addEventListener('pointercancel', onUp);
 }
 
-function captureFace(){
-  const src = faceSrcRect();
-  if(!src){ faceShot = null; faceShotMirror = false; return false; }
-
-  const SQ = 640;
-  const c = document.createElement('canvas');
-  c.width = c.height = SQ;
-  const g = c.getContext('2d');
-  g.drawImage(src.v, src.kx, src.ky, src.kw, src.kh, 0, 0, SQ, SQ);
-
-  faceShot = c;
-  faceShotMirror = (camFacing === 'user');
-  return true;
+function moveAt(ev, el, w, h){
+  const layerRect = stickerLayer.getBoundingClientRect();
+  el.style.left = (ev.clientX - layerRect.left - w/2) + 'px';
+  el.style.top  = (ev.clientY - layerRect.top - h/2) + 'px';
 }
 
+/* 已摆放的贴纸：拖动调整位置 */
+function bindStickerDrag(el, s){
+  el.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    el.classList.add('dragging');
+    el.style.zIndex = 20;
+    const layerRect = stickerLayer.getBoundingClientRect();
+    const startX = e.clientX, startY = e.clientY;
+    const origX = s.x, origY = s.y;
+    const onMove = ev => {
+      ev.preventDefault();
+      s.x = origX + (ev.clientX - startX);
+      s.y = origY + (ev.clientY - startY);
+      s.x = clamp(s.x, -s.w*0.5, layerRect.width - s.w*0.5);
+      s.y = clamp(s.y, -s.w*0.5, layerRect.height - s.w*0.5);
+      el.style.left = s.x + 'px';
+      el.style.top  = s.y + 'px';
+    };
+    const onUp = () => {
+      el.classList.remove('dragging');
+      el.style.zIndex = '';
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  });
+}
+
+/* 打开拍照页 */
 async function openCapture(){
   ensureAudio();
   G.state = 'capture';
@@ -1771,23 +1644,48 @@ async function openCapture(){
   showEl.classList.add('hide');
   capEl.classList.remove('hide');
   document.body.classList.add('capturing');
-  faceShot = null;
-  faceShotMirror = false;
 
-  buildTemplateStrip();
-  setCapStep('face');
+  clearStickers();
+  buildStickerBar();
+  // 已收集的伙伴默认摆一排在画面里
+  const has = ORDER.filter(k => G.collected[k]);
+  const w = STICKER_W();
+  has.forEach((k, i) => {
+    addStickerDefault(k, i, has.length, w);
+  });
 
-  if(!camTouched && camFacing !== 'user'){
-    const ok = await openCam('user');
-    if(!ok) await openCam('environment');
-  } else if(!camStream){
+  if(!camStream){
     await openCam(camFacing);
   } else {
     await ensureCamBg();
   }
-  requestAnimationFrame(() => paintScan());
 }
 
+/* 默认把伙伴摆一排居中（用户可再拖动） */
+function addStickerDefault(key, i, n, w){
+  const c = CHARS[key];
+  const img = CHAR_IMG(key);
+  const rect = img.naturalWidth ? (img.naturalWidth / Math.max(img.naturalHeight,1)) : 1;
+  const h = Math.round(w / Math.max(rect, 0.3));
+  const el = document.createElement('div');
+  el.className = 'sticker';
+  el.innerHTML = '<img src="' + c.img + Q + '" alt="' + c.name + '">';
+  el.style.width = w + 'px';
+  el.style.height = h + 'px';
+  stickerLayer.appendChild(el);
+  const layerRect = stickerLayer.getBoundingClientRect();
+  const gap = 14;
+  const totalW = n * w + (n - 1) * gap;
+  const x = (layerRect.width - totalW) / 2 + i * (w + gap);
+  const y = layerRect.height * 0.30;
+  el.style.left = x + 'px';
+  el.style.top  = y + 'px';
+  const s = { key, el, x, y, w };
+  bindStickerDrag(el, s);
+  placedStickers.push(s);
+}
+
+/* 关闭拍照页，回结算 */
 async function closeCapture(){
   capEl.classList.add('hide');
   shotEl.classList.add('hide');
@@ -1795,122 +1693,47 @@ async function closeCapture(){
   overEl.classList.remove('hide');
   G.state = 'over';
   if(!camStream){
-    let ok = await openCam('environment');
-    if(!ok){ await new Promise(r => setTimeout(r, 280)); ok = await openCam('environment'); }
+    await openCam('environment');
   } else {
     await ensureCamBg();
   }
 }
 
-/* 在 (cx, cy) 以直径 fd 贴一张正圆的人脸（径向羽化 + 投影） */
-function drawFaceAt(g, cx, cy, fd){
-  const rx = fd / 2;
-  const f = faceFrame();
-  if(!f){
-    g.save();
-    g.fillStyle = '#D9CFC0';
-    g.beginPath(); g.arc(cx, cy, rx, 0, Math.PI * 2); g.fill();
-    g.restore();
-    return;
-  }
-
-  const SQ = 512;
-  const tc = document.createElement('canvas');
-  tc.width = tc.height = SQ;
-  const tg = tc.getContext('2d');
-  if(f.mirror){ tg.translate(SQ, 0); tg.scale(-1, 1); }
-  tg.drawImage(f.img, f.sx, f.sy, f.sw, f.sh, 0, 0, SQ, SQ);
-
-  tg.globalCompositeOperation = 'destination-in';
-  const rg = tg.createRadialGradient(SQ / 2, SQ / 2, SQ * 0.30, SQ / 2, SQ / 2, SQ * 0.50);
-  rg.addColorStop(0,    'rgba(0,0,0,1)');
-  rg.addColorStop(0.92, 'rgba(0,0,0,1)');
-  rg.addColorStop(1,    'rgba(0,0,0,0)');
-  tg.fillStyle = rg;
-  tg.fillRect(0, 0, SQ, SQ);
-
-  g.save();
-  g.shadowColor   = 'rgba(20,16,14,.28)';
-  g.shadowBlur    = fd * 0.13;
-  g.shadowOffsetY = fd * 0.035;
-  g.drawImage(tc, cx - rx, cy - rx, rx * 2, rx * 2);
-  g.restore();
-}
-
-/* 占位模板卡画进成片 */
-function drawTplPlaceholder(g, x, y, dw, dh){
-  const r = Math.min(dw, dh) * 0.10;
-  g.save();
-  g.shadowColor = 'rgba(20,16,14,.20)';
-  g.shadowBlur = 46;
-  g.shadowOffsetY = 20;
-  g.fillStyle = '#FFFFFF';
-  roundRect(g, x, y, dw, dh, r);
-  g.fill();
-  g.restore();
-
-  g.save();
-  g.strokeStyle = '#D8CFC2';
-  g.lineWidth = 4;
-  g.setLineDash([18, 14]);
-  roundRect(g, x + 14, y + 14, dw - 28, dh - 28, r * 0.8);
-  g.stroke();
-  g.restore();
-
-  // 角色立绘 + 文字
-  const c = CHARS[tplSel.key];
-  const img = CHAR_IMG(c);
-  const ih = dh * 0.34;
-  const iw = ih * (img.naturalWidth || 1) / (img.naturalHeight || 1);
-  g.save();
-  g.globalAlpha = 0.9;
-  g.drawImage(img, x + dw / 2 - iw / 2, y + dh * 0.62 - ih / 2, iw, ih);
-  g.restore();
-
-  g.save();
-  g.fillStyle = '#B5A897';
-  g.font = '600 ' + Math.round(dw * 0.036) + 'px system-ui, "PingFang SC", "Microsoft YaHei", sans-serif';
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.fillText('合 照 模 板 · 待 替 换', x + dw / 2, y + dh * 0.80);
-  g.restore();
-}
-
-const _charImgs = {};
-function CHAR_IMG(key){
-  const k = typeof key === 'string' ? key : key.key;
-  if(!_charImgs[k]){
-    const im = new Image();
-    im.src = CHARS[k].img + Q;
-    _charImgs[k] = im;
-  }
-  return _charImgs[k];
-}
-
-function roundRect(g, x, y, w, h, r){
-  g.beginPath();
-  g.moveTo(x + r, y);
-  g.arcTo(x + w, y, x + w, y + h, r);
-  g.arcTo(x + w, y + h, x, y + h, r);
-  g.arcTo(x, y + h, x, y, r);
-  g.arcTo(x, y, x + w, y, r);
-  g.closePath();
-}
-
-/* 出片：米白底 + 占位卡 + 圆圈脸 */
+/* 快门：相机帧 + 所有贴纸 → 4:5 成片 → 直接「拍好啦」 */
 function shoot(){
-  if(!tplSel) return;
-  const c = capCompose(OUT_W, OUT_H);
-
+  const v = camEl;
   const cc = document.createElement('canvas');
   cc.width = OUT_W; cc.height = OUT_H;
   const g = cc.getContext('2d');
 
-  g.fillStyle = '#F5F0E7';
-  g.fillRect(0, 0, OUT_W, OUT_H);
+  // 背景：相机画面 cover 铺满 4:5
+  if(v && v.videoWidth){
+    const vw = v.videoWidth, vh = v.videoHeight;
+    const sc = Math.max(OUT_W / vw, OUT_H / vh);
+    const dw = vw * sc, dh = vh * sc;
+    const dx = (OUT_W - dw) / 2, dy = (OUT_H - dh) / 2;
+    if(camFacing === 'user'){
+      g.save(); g.translate(OUT_W, 0); g.scale(-1, 1);
+      g.drawImage(v, OUT_W - dx - dw, dy, dw, dh);
+      g.restore();
+    } else {
+      g.drawImage(v, dx, dy, dw, dh);
+    }
+  } else {
+    g.fillStyle = '#EFE8DE';
+    g.fillRect(0, 0, OUT_W, OUT_H);
+  }
 
-  drawTplPlaceholder(g, c.x, c.y, c.dw, c.dh);
-  drawFaceAt(g, c.cx, c.cy, c.fd);
+  // 贴纸：屏幕坐标 → 成片坐标（等比）
+  const layerRect = stickerLayer.getBoundingClientRect();
+  const scX = OUT_W / layerRect.width, scY = OUT_H / layerRect.height;
+  placedStickers.forEach(s => {
+    const img = CHAR_IMG(s.key);
+    if(!img || !img.naturalWidth) return;
+    const dw = s.w * scX;
+    const dh = dw * (img.naturalHeight / img.naturalWidth);
+    g.drawImage(img, s.x * scX, s.y * scY, dw, dh);
+  });
 
   shotDataUrl = cc.toDataURL('image/jpeg', 0.92);
   shotImg.src = shotDataUrl;
@@ -1920,26 +1743,24 @@ function shoot(){
   shotEl.classList.remove('hide');
 }
 
-function onShootTap(){
-  ensureAudio();
-  if(capStep === 'face'){
-    if(!captureFace() && camStream){
-      toast('摄像头还没出画面，稍等一下');
-      return;
-    }
-    setCapStep('pose');
-  } else {
-    shoot();
-  }
-}
-
+/* 重新拍摄 */
 function retake(){
   ensureAudio();
   shotEl.classList.add('hide');
   capEl.classList.remove('hide');
-  setCapStep(faceShot ? 'pose' : 'face');
   if(!camStream) openCam(camFacing); else ensureCamBg();
 }
+
+function CHAR_IMG(key){
+  const k = typeof key === 'string' ? key : key.key;
+  if(!_charImgs[k]){
+    const im = new Image();
+    im.src = CHARS[k].img + Q;
+    _charImgs[k] = im;
+  }
+  return _charImgs[k];
+}
+const _charImgs = {};
 
 /* =========================================================================
    10. 主循环
@@ -1952,11 +1773,6 @@ function render(){
   if(needBg) drawCamBg();
 
   if(G.state === 'show' && R3.flat) drawFlatShow();
-
-  if(G.state === 'capture'){
-    if(capStep === 'face') paintScan();
-    else paintFacePatch();
-  }
 }
 
 function safeRender(){
@@ -2006,17 +1822,11 @@ camFailBtn.addEventListener('click', () => {
 });
 capBackBtn.addEventListener('click', () => {
   ensureAudio();
-  if(capStep === 'pose'){
-    faceShot = null;
-    setCapStep('face');
-  } else {
-    closeCapture();
-  }
+  closeCapture();
 });
-shootBtnEl.addEventListener('click', onShootTap);
+shutterBtn.addEventListener('click', () => { ensureAudio(); shoot(); });
 $('shotDone').addEventListener('click', () => { ensureAudio(); closeCapture(); });
 $('retakeBtn').addEventListener('click', retake);
-capFlipBtn.addEventListener('click', () => { ensureAudio(); flipCamera(); });
 
 /* 演示模式：?demo=1 扫描页出现"直接收集"按钮 */
 if(/[?&]demo=1/.test(location.search || '')){
@@ -2032,10 +1842,9 @@ if(/[?&]demo=1/.test(location.search || '')){
 window.__WORK = {
   G, CONFIG, CHARS, ORDER, SCAN, R3,
   bootScan, analyzeShapes, onFound, showCharacter, showOver, openCapture,
-  shoot, closeCapture, setCapStep, captureFace, capCompose, layoutCapScene,
-  get tplSel(){ return tplSel; },
-  get capStep(){ return capStep; },
+  shoot, closeCapture,
   get showingKey(){ return showingKey; },
+  get placedStickers(){ return placedStickers; },
 };
 
 loadStore();
