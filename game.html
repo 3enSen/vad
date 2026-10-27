@@ -231,6 +231,13 @@
   /* ---------- 收集完成 ---------- */
   #overTitle{font-size:clamp(24px,6.4vmin,30px);font-weight:800;letter-spacing:.02em}
   #overSub{margin-top:8px;font-size:13px;color:var(--ink2);letter-spacing:.04em}
+  .resetLink{
+    margin-top:18px;padding:6px 12px;border:none;background:none;
+    font-family:inherit;font-size:12px;color:#B5A897;letter-spacing:.04em;
+    text-decoration:underline;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .resetLink:active{opacity:.6}
   #tplCards{
     display:flex;gap:12px;margin:24px 0 22px;justify-content:center;
     flex-wrap:nowrap;
@@ -458,6 +465,7 @@
       <button class="btn ghost" id="laterBtn" type="button">继续寻找</button>
       <button class="btn" id="photoBtn" type="button">现在拍照</button>
     </div>
+    <button class="resetLink" id="resetBtn" type="button">清空进度，重新开始</button>
   </div>
 
   <!-- 拍照：全屏实景 + 可拖动伙伴贴纸 -->
@@ -515,8 +523,9 @@ const Q = window.ASSET_Q || '';
 
 const CONFIG = {
   // 图像识别（黑色图形）
-  scanNeed: 4,               // 连续命中帧数
+  scanNeed: 8,               // 连续命中帧数（4→8：环境里的暗块/阴影一晃就命中，误收集）
   scanInterval: 0.09,        // 检测间隔（秒）
+  scanWarmup: 1200,          // 摄像头就绪后等待画面稳定的毫秒数
   scanMinContrast: 48,
   scanThresholdRatio: 0.42,
   scanMinLum: 26,
@@ -1438,6 +1447,8 @@ async function bootScan(){
   }
   camFailBtn.hidden = true;
   scanDbg.textContent = '';
+  // 等摄像头画面稳定再开始识别，避免启动瞬间全黑/噪点画面被误判成图形
+  await wait(CONFIG.scanWarmup);
   SCAN.running = true;
 }
 
@@ -1519,7 +1530,15 @@ function collectLater(){
 /* =========================================================================
    9. 拍照：全屏实景 + 可拖动伙伴贴纸
    ========================================================================= */
-const OUT_W = 1080, OUT_H = 1350;
+/* 成片尺寸：跟随屏幕比例（长边 1350），这样贴纸从屏幕映射到成片是
+   统一等比缩放，不会被压扁/拉长。之前固定 1080×1350（4:5），而手机屏幕
+   接近 9:19.5，两个比例不同导致贴纸横向 scale 大于纵向 scale → 照片里的
+   贴纸被压变形。 */
+function outSize(){
+  const maxDim = 1350;
+  const k = maxDim / Math.max(W, H);
+  return { w: Math.max(1, Math.round(W * k)), h: Math.max(1, Math.round(H * k)) };
+}
 
 let shotDataUrl = '';
 let placedStickers = [];        // { key, el, x, y, w }  x/y = 左上角(CSS px)，w = 宽
@@ -1705,42 +1724,13 @@ async function openCapture(){
 
   clearStickers();
   buildStickerBar();
-  // 已收集的伙伴默认摆一排在画面里
-  const has = ORDER.filter(k => G.collected[k]);
-  const w = STICKER_W();
-  has.forEach((k, i) => {
-    addStickerDefault(k, i, has.length, w);
-  });
+  // 画面初始留空，伙伴从底部白框手动拖出来摆放
 
   if(!camStream){
     await openCam(camFacing);
   } else {
     await ensureCamBg();
   }
-}
-
-/* 默认把伙伴摆一排居中（用户可再拖动） */
-function addStickerDefault(key, i, n, w){
-  const c = CHARS[key];
-  const img = CHAR_IMG(key);
-  const rect = img.naturalWidth ? (img.naturalWidth / Math.max(img.naturalHeight,1)) : 1;
-  const h = Math.round(w / Math.max(rect, 0.3));
-  const el = document.createElement('div');
-  el.className = 'sticker';
-  el.innerHTML = '<img src="' + c.img + Q + '" alt="' + c.name + '">';
-  el.style.width = w + 'px';
-  el.style.height = h + 'px';
-  stickerLayer.appendChild(el);
-  const layerRect = stickerLayer.getBoundingClientRect();
-  const gap = 14;
-  const totalW = n * w + (n - 1) * gap;
-  const x = (layerRect.width - totalW) / 2 + i * (w + gap);
-  const y = layerRect.height * 0.30;
-  el.style.left = x + 'px';
-  el.style.top  = y + 'px';
-  const s = { key, el, x, y, w, h };
-  bindStickerDrag(el, s);
-  placedStickers.push(s);
 }
 
 /* 关闭拍照页，回结算 */
@@ -1757,9 +1747,10 @@ async function closeCapture(){
   }
 }
 
-/* 快门：相机帧 + 所有贴纸 → 4:5 成片 → 直接「拍好啦」 */
+/* 快门：相机帧 + 所有贴纸 → 成片 → 直接「拍好啦」 */
 function shoot(){
   const v = camEl;
+  const { w: OUT_W, h: OUT_H } = outSize();
   const cc = document.createElement('canvas');
   cc.width = OUT_W; cc.height = OUT_H;
   const g = cc.getContext('2d');
@@ -1782,15 +1773,16 @@ function shoot(){
     g.fillRect(0, 0, OUT_W, OUT_H);
   }
 
-  // 贴纸：屏幕坐标 → 成片坐标（等比）
+  // 贴纸：屏幕坐标 → 成片坐标。成片已按屏幕比例生成，横向/纵向 scale 一致，
+  // 用统一 scale 等比放大，贴纸不被压扁。
   const layerRect = stickerLayer.getBoundingClientRect();
-  const scX = OUT_W / layerRect.width, scY = OUT_H / layerRect.height;
+  const sc = OUT_W / layerRect.width;
   placedStickers.forEach(s => {
     const img = CHAR_IMG(s.key);
     if(!img || !img.naturalWidth) return;
-    const dw = s.w * scX;
-    const dh = (s.h != null) ? s.h * scY : dw * (img.naturalHeight / img.naturalWidth);
-    g.drawImage(img, s.x * scX, s.y * scY, dw, dh);
+    const dw = s.w * sc;
+    const dh = (s.h != null) ? s.h * sc : dw * (img.naturalHeight / img.naturalWidth);
+    g.drawImage(img, s.x * sc, s.y * sc, dw, dh);
   });
 
   shotDataUrl = cc.toDataURL('image/jpeg', 0.92);
@@ -1874,6 +1866,15 @@ showReplayBtn.addEventListener('click', () => { ensureAudio(); replayShow(); });
 scanGoBtn.addEventListener('click', () => { ensureAudio(); showOver(); });
 $('photoBtn').addEventListener('click', () => { openCapture(); });
 $('laterBtn').addEventListener('click', () => { ensureAudio(); collectLater(); });
+$('resetBtn').addEventListener('click', () => {
+  // 清空进度，回到全新状态（应对"没收集却显示已收集"的残留）
+  try{ localStorage.removeItem(STORE_KEY); }catch(e){}
+  ORDER.forEach(k => { G.collected[k] = false; });
+  G.idx = 0;
+  overEl.classList.add('hide');
+  ensureAudio();
+  bootScan();
+});
 camFailBtn.addEventListener('click', () => {
   // 没摄像头也能看流程：直接把当前目标标记为已收集（演示用）
   onFound(targetKey());
