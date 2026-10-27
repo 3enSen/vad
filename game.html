@@ -549,17 +549,26 @@ const CONFIG = {
 };
 
 /* 三个形象：vv=水滴形 / aa=泡泡形 / dd=气球形（2026-10-28 老师定的三张剪影）。
-   glb 是带骨骼动画的工作动作（characters/animations/，1.67s 循环）。 */
+   glb 是各自真正的干活动作（characters/wipe/）。
+   三个动作的工作面不同，展示时用不同的俯视角 + 位移幅度：
+     vv 擦地板 → 水平面，位移 0.53（X0.45 / Z0.29），俯身趴地，要俯视才看得清
+     aa 擦玻璃 → 垂直平面，位移 0.34（Y0.30），站立贴墙，平视即可
+     dd 擦桌子 → 水平面，位移 0.49（X0.39 / Z0.29），俯身擦桌面
+   pitch = 俯视角（度）；moveScale = 位移保留比例（原位移远大于角色本身，
+   不压会直接跑出画面）；yFrac = 画面落点（负数往下）。 */
 const CHARS = {
   v: { key:'v', name:'vv', accent:'#4A9EFF', img:'chars/v.png',
-       glb:'characters/animations/heart_pat.glb',
-       shape:'drop', shapeName:'水滴', cap:'正在认真干活，一秒都没停' },
+       glb:'characters/wipe/wipe_floor.glb',
+       work:'擦地板', plane:'水平面', pitch:38, moveScale:0.42, yFrac:-0.15,
+       shape:'drop', shapeName:'水滴', cap:'趴在地上擦地板，一寸都没落下' },
   a: { key:'a', name:'aa', accent:'#FF7A45', img:'chars/a.png',
-       glb:'characters/animations/bubble_pat.glb',
-       shape:'bubble', shapeName:'泡泡', cap:'干劲十足，越干越起劲' },
+       glb:'characters/wipe/wipe_glass.glb',
+       work:'擦玻璃', plane:'垂直平面', pitch:0, moveScale:0.60, yFrac:-0.04,
+       shape:'bubble', shapeName:'泡泡', cap:'举着手擦玻璃，从上到下全擦遍' },
   d: { key:'d', name:'dd', accent:'#FF8FAB', img:'chars/d.png',
-       glb:'characters/animations/leaf_pat.glb',
-       shape:'balloon', shapeName:'气球', cap:'不声不响，把活干得漂漂亮亮' },
+       glb:'characters/wipe/wipe_table.glb',
+       work:'擦桌子', plane:'水平面', pitch:32, moveScale:0.42, yFrac:-0.11,
+       shape:'balloon', shapeName:'气球', cap:'把桌面擦得能照出人影' },
 };
 const ORDER = ['v', 'a', 'd'];
 
@@ -1131,13 +1140,73 @@ function makeContactShadow(){
   return mesh;
 }
 
-/* 载入并摆好一个角色：底部落在 groundY，横向居中，整体缩放到画面里刚好 */
+/* 绕 X 轴转 pitch 后，包围盒在画面上的投影尺寸。
+   三个动作的工作面不同：水平面上的动作（擦地板/擦桌子）只有俯过视角才看得清，
+   垂直平面上的动作（擦玻璃）平视就好。 */
+function projSize(box, pitchRad){
+  const cs = Math.cos(pitchRad), sn = Math.sin(pitchRad);
+  let mnY = Infinity, mxY = -Infinity;
+  for(const Y of [box.min.y, box.max.y])
+  for(const Z of [box.min.z, box.max.z]){
+    const ny = Y * cs - Z * sn;
+    if(ny < mnY) mnY = ny; if(ny > mxY) mxY = ny;
+  }
+  return { x: box.max.x - box.min.x, y: mxY - mnY };
+}
+
+/* 载入动作后预处理：
+   ① 把位移最大的那条 position 轨道按 moveScale 压缩（原位移远大于角色本身，
+      不压会整个跑出画面；手部的推拉幅度只有它的 1/10，不受影响）
+   ② 采样整段动作，量出真实包围盒（SkinnedMesh 必须用 precise 模式，
+      否则量到的是没被骨骼变形过的裸顶点 —— 那堆顶点只有 3cm 高，会算出荒唐的比例） */
+function prepareWorkMotion(g, c){
+  const obj = g.scene, clip = g.animations[0];
+  if(!clip) return;
+
+  let best = null, bestAmp = -1;
+  for(const tr of clip.tracks){
+    if(!/\.position$/.test(tr.name)) continue;
+    const v = tr.values, n = v.length / 3;
+    let amp = 0;
+    for(let k = 0; k < 3; k++){
+      let lo = Infinity, hi = -Infinity;
+      for(let i = 0; i < n; i++){ if(v[i*3+k] < lo) lo = v[i*3+k]; if(v[i*3+k] > hi) hi = v[i*3+k]; }
+      amp = Math.max(amp, hi - lo);
+    }
+    if(amp > bestAmp){ bestAmp = amp; best = tr; }
+  }
+  if(best && c.moveScale < 1){
+    const v = best.values, n = v.length / 3;
+    const av = [0, 0, 0];
+    for(let i = 0; i < n; i++) for(let k = 0; k < 3; k++) av[k] += v[i*3+k] / n;
+    for(let i = 0; i < n; i++) for(let k = 0; k < 3; k++)
+      v[i*3+k] = av[k] + (v[i*3+k] - av[k]) * c.moveScale;
+  }
+
+  // 采样 20 帧量全程包围盒
+  const mixer = new THREE.AnimationMixer(obj);
+  mixer.clipAction(clip).play();
+  const full = new THREE.Box3();
+  const N = 20;
+  for(let i = 0; i < N; i++){
+    mixer.setTime(clip.duration * i / N);
+    obj.updateMatrixWorld(true);
+    full.union(new THREE.Box3().setFromObject(obj, true));
+  }
+  mixer.stopAllAction();
+  // 复位到第一帧，避免残留姿态影响后续
+  obj.updateMatrixWorld(true);
+  g.userData.fit = { box: full.clone(), pitch: (c.pitch || 0) * Math.PI / 180 };
+}
+
+/* 载入并摆好一个角色 */
 function loadWorkModel(key){
   return new Promise((resolve, reject) => {
     if(R3.cache[key]){ resolve(R3.cache[key]); return; }
     const c = CHARS[key];
     new window.GLTFLoader().load(c.glb + Q,
       g => {
+        prepareWorkMotion(g, c);
         R3.cache[key] = g;
         resolve(g);
       },
@@ -1187,22 +1256,31 @@ async function showCharacter(key){
 
   if(gltf){
     const obj = gltf.scene;
-    const box = new THREE.Box3().setFromObject(obj);
+    const fit = gltf.userData.fit;
+    const box = fit ? fit.box : new THREE.Box3().setFromObject(obj);
+    const pitch = fit ? fit.pitch : 0;
     const size = new THREE.Vector3(); box.getSize(size);
     const center = new THREE.Vector3(); box.getCenter(center);
 
-    // 归一：高不超过画面 38%，宽不超过画面 72%，底部落在 y=0
-    let s = (R3.visH * 0.38) / Math.max(size.y, 1e-6);
-    if(size.x * s > R3.visW * 0.72) s = (R3.visW * 0.72) / size.x;
+    // 归一：按"俯过视角后的投影尺寸"算，保证整段动作都在画面里
+    const ps = projSize(box, pitch);
+    let s = (R3.visH * 0.46) / Math.max(ps.y, 1e-6);
+    if(ps.x * s > R3.visW * 0.84) s = (R3.visW * 0.84) / ps.x;
 
     obj.scale.setScalar(s);
-    obj.position.set(-center.x * s, -box.min.y * s, -center.z * s);
-    R3.group.add(obj);
-    R3.group.position.set(0, -R3.visH * 0.16, 0);
+    obj.position.set(-center.x * s, -center.y * s, -center.z * s);
 
-    const w = size.x * s;
-    R3.shadow.scale.set(w * 1.25, 1, w * 0.8);
-    R3.shadow.position.set(0, -R3.visH * 0.16 + 0.001, 0);
+    // 俯视角：水平面上的动作要俯过来看才看得清
+    R3.pivot = new THREE.Group();
+    R3.pivot.rotation.x = pitch;
+    R3.pivot.add(obj);
+    R3.group.add(R3.pivot);
+    R3.group.position.set(0, R3.visH * (c.yFrac || -0.16), 0);
+
+    // 接触影：贴在动作面的下方
+    const w = ps.x * s;
+    R3.shadow.scale.set(w * 0.62, 1, w * 0.42);
+    R3.shadow.position.set(0, R3.visH * (c.yFrac || -0.16) - ps.y * s * 0.52 + 0.001, 0);
     R3.shadow.visible = true;
 
     if(gltf.animations && gltf.animations.length){
