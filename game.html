@@ -519,7 +519,7 @@
       <div id="showCap"></div>
       <div id="showUnlock">
         <svg viewBox="0 0 24 24"><path d="M9.6 16.8 4.8 12l1.7-1.7 3.1 3.1 7.9-7.9L19.2 7.4z"/></svg>
-        <span>已解锁合照模板</span>
+        <span>已解锁新的小伙伴</span>
       </div>
     </div>
     <div class="capActions">
@@ -1796,7 +1796,7 @@ async function bootScan(){
   SCAN.running = true;
 }
 
-/* 扫到了：解锁模板 + 上场表演 */
+/* 扫到了：解锁伙伴 + 上场表演 */
 function onFound(key){
   if(G.state !== 'scan' || !SCAN.running) return;
   SCAN.running = false;
