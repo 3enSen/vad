@@ -273,6 +273,13 @@
     position:absolute;inset:0;z-index:2;
     overflow:hidden;
   }
+  /* 人物层：端上人像分割出来的"只有你"的一层，插在贴纸图层的中间。
+     z 小的贴纸排它后面 → 被你挡住；z 大的排它前面 → 挡在你身上。 */
+  #capPerson{
+    position:absolute;inset:0;width:100%;height:100%;
+    pointer-events:none;display:none;
+  }
+  #capPerson.on{display:block}
   .sticker{
     position:absolute;touch-action:none;
     filter:drop-shadow(0 8px 16px rgba(20,16,14,.28));
@@ -524,7 +531,9 @@
 
   <!-- 拍照：全屏实景 + 可拖动伙伴贴纸 -->
   <div class="sheet clear hide" id="capture">
-    <div id="stickerLayer"></div>
+    <div id="stickerLayer">
+      <canvas id="capPerson"></canvas>
+    </div>
 
     <button id="capBack" type="button" aria-label="返回">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
@@ -547,7 +556,7 @@
     </div>
 
     <div id="stickerBar">
-      <div id="stickerBarHint">拖出伙伴 · 点一下调前后 · 拖到右上角删除</div>
+      <div id="stickerBarHint">拖出伙伴 · 点一下调前后（放后面会被你挡住）· 拖到右上角删除</div>
       <div id="stickerBarRow"></div>
     </div>
 
@@ -621,21 +630,29 @@ const CONFIG = {
    三个动作的工作面不同，展示时用不同的俯视角 + 位移幅度：
      vv 擦地板 → 水平面，位移 0.53（X0.45 / Z0.29），俯身趴地，要俯视才看得清
      aa 擦玻璃 → 垂直平面，位移 0.34（Y0.30），站立贴墙，平视即可
-     dd 擦桌子 → 水平面，位移 0.49（X0.39 / Z0.29），俯身擦桌面
+     dd 擦桌子 → 水平面，俯视 78°，改成沿长方形边线绕圈擦桌面
    pitch = 俯视角（度）；moveScale = 位移保留比例（原位移远大于角色本身，
-   不压会直接跑出画面）；yFrac = 画面落点（负数往下）。 */
+   不压会直接跑出画面）；yFrac = 画面落点（负数往下，0 是画面正中）。
+   三个形象都往上提过一档：底部是名字/台词/按钮，落脚点压太低会跟按钮叠在一起。 */
 const CHARS = {
   v: { key:'v', name:'vv', accent:'#4A9EFF', img:'chars/v.png',
        glb:'characters/wipe/wipe_floor.glb',
-       work:'擦地板', plane:'水平面', pitch:38, moveScale:0.42, yFrac:-0.15,
+       work:'擦地板', plane:'水平面', pitch:38, moveScale:0.42, yFrac:-0.07,
        shape:'drop', shapeName:'水滴', cap:'正在认真擦地板，一寸都没落下' },
   a: { key:'a', name:'aa', accent:'#FF7A45', img:'chars/a.png',
        glb:'characters/wipe/wipe_glass.glb',
-       work:'擦玻璃', plane:'垂直平面', pitch:0, moveScale:0.32, yFrac:-0.04,
+       work:'擦玻璃', plane:'垂直平面', pitch:0, moveScale:0.32, yFrac:0.04,
        shape:'bubble', shapeName:'泡泡', cap:'擦玻璃，脑袋怎么晕晕的' },
   d: { key:'d', name:'dd', accent:'#FF8FAB', img:'chars/d.png',
        glb:'characters/wipe/wipe_table.glb',
-       work:'擦桌子', plane:'水平面', pitch:78, moveScale:0.42, yFrac:-0.11,
+       work:'擦桌子', plane:'水平面', pitch:78, moveScale:0.42, yFrac:-0.03,
+       /* 运动轨迹：不再用动画里自带的直线位移，改成自己沿长方形边线绕
+          （5cm × 6cm，模型单位是米 → ×0.01）。loop = 绕一圈的秒数，
+          corner = 转角圆角（cm），让它在四角是拐弯不是硬折。
+          yaw = 基准朝向（度）：原动作是绕圈擦的，锁掉根骨骼旋转后脸的
+          朝向是侧着的，转 90° 才是正面朝镜头（俯视下才看得出是 dd）。
+          spin = 朝向跟随轨迹的比例，只跟一点点，多了会变成歪头。 */
+       path:{ w:5, h:6, loop:11, corner:1.4, yaw:90, spin:0.18 },
        shape:'balloon', shapeName:'气球', cap:'嘿咻嘿咻嘿咻' },
 };
 const ORDER = ['v', 'a', 'd'];
@@ -698,6 +715,7 @@ const overEl    = $('overSheet');
 const tplCards  = $('tplCards');
 const capEl     = $('capture');
 const stickerLayer = $('stickerLayer');
+const capPersonEl = $('capPerson');
 const stickerBarRow = $('stickerBarRow');
 const capBackBtn= $('capBack');
 const capTrashEl= $('capTrash');
@@ -877,6 +895,8 @@ function closeCam(){
 }
 async function flipCamera(){
   camTouched = true;
+  SEG.mask = null;                  // 换了镜头，旧掩膜作废（镜像方向反了）
+  SEG.lastT = 0;
   const next = camFacing === 'user' ? 'environment' : 'user';
   closeCam();
   await new Promise(r => setTimeout(r, 140));
@@ -1132,7 +1152,8 @@ function updateScan(dt){
    ========================================================================= */
 const R3 = { ok:false, flat:false, flatImg:null, flatT:0,
              renderer:null, scene:null, camera:null, visH:0, visW:0,
-             mixer:null, clip:null, group:null, shadow:null, cache:{} };
+             mixer:null, clip:null, group:null, shadow:null, cache:{},
+             pivot:null, mover:null, spin:null, path:null };
 
 /* 先自己探一次，别让 three.js 在不支持的机器上往控制台报红 */
 function webglSupported(){
@@ -1220,6 +1241,83 @@ function projSize(box, pitchRad){
   return { x: box.max.x - box.min.x, y: mxY - mnY };
 }
 
+/* =========================================================================
+   6b. 矩形边线轨迹（dd 擦桌子：沿 5cm × 6cm 长方形边线绕圈）
+   ========================================================================= */
+/* 圆角矩形的周长参数化：u∈[0,1) → { x, z, tx, tz }（位置 + 单位切线）。
+   从下边左段起步，逆时针绕一圈：下 → 右下角 → 右 → 右上角 → 上 → 左上角 → 左 → 左下角。 */
+function rectPathAt(u, hw, hd, rc){
+  const r  = Math.max(0, Math.min(rc, Math.min(hw, hd) * 0.9));
+  const sx = 2 * (hw - r);          // 两条横直边
+  const sz = 2 * (hd - r);          // 两条竖直边
+  const arc = Math.PI * r / 2;
+  const total = 2 * sx + 2 * sz + 4 * arc;
+  let d = (((u % 1) + 1) % 1) * total;
+
+  if(d < sx) return { x: -(hw - r) + d, z: hd, tx: 1, tz: 0 };
+  d -= sx;
+  if(d < arc){                      // 右下角
+    const a = Math.PI / 2 - d / r;
+    return { x: (hw - r) + r * Math.cos(a), z:  (hd - r) + r * Math.sin(a),
+             tx: Math.sin(a), tz: -Math.cos(a) };
+  }
+  d -= arc;
+  if(d < sz) return { x: hw, z: (hd - r) - d, tx: 0, tz: -1 };
+  d -= sz;
+  if(d < arc){                      // 右上角
+    const a = -d / r;
+    return { x: (hw - r) + r * Math.cos(a), z: -(hd - r) + r * Math.sin(a),
+             tx: Math.sin(a), tz: -Math.cos(a) };
+  }
+  d -= arc;
+  if(d < sx) return { x: (hw - r) - d, z: -hd, tx: -1, tz: 0 };
+  d -= sx;
+  if(d < arc){                      // 左上角
+    const a = -Math.PI / 2 - d / r;
+    return { x: -(hw - r) + r * Math.cos(a), z: -(hd - r) + r * Math.sin(a),
+             tx: Math.sin(a), tz: -Math.cos(a) };
+  }
+  d -= arc;
+  if(d < sz) return { x: -hw, z: -(hd - r) + d, tx: 0, tz: 1 };
+  d -= sz;
+  const a = Math.PI - d / r;        // 左下角
+  return { x: -(hw - r) + r * Math.cos(a), z: (hd - r) + r * Math.sin(a),
+           tx: Math.sin(a), tz: -Math.cos(a) };
+}
+
+/* 每帧推进：时间 → 位置 + 朝向。朝向按「原动作行进方向 → 当前切线」
+   算夹角，所以角色是朝着走的方向擦，动作本身的姿态关系不变。 */
+function updatePathMotion(dt){
+  const P = R3.path;
+  if(!P || !R3.mover) return;
+  const { hw, hd, loop, corner, dir0 } = P.cfg;
+  const spin = P.cfg.spin || 0;
+  P.t = (P.t + dt) % loop;
+  const p = rectPathAt(P.t / loop, hw, hd, corner);
+
+  R3.mover.position.x = p.x * P.s;
+  R3.mover.position.z = p.z * P.s;
+
+  // R(θ)·dir0 = 切线；乘 spin 只跟一部分，俯视下才不至于歪头
+  const ty = Math.atan2(p.tx * dir0[1] - dir0[0] * p.tz,
+                        dir0[0] * p.tx + dir0[1] * p.tz) * spin;
+  if(P.yaw == null) P.yaw = ty;
+  else {
+    let d = ty - P.yaw;
+    while(d >  Math.PI) d -= Math.PI * 2;
+    while(d < -Math.PI) d += Math.PI * 2;
+    P.yaw += d * Math.min(1, dt * 6);        // 转角缓一下，别硬折
+  }
+  if(R3.spin) R3.spin.rotation.y = (P.cfg.yaw || 0) + P.yaw;
+
+  // 影子跟着走：俯视角下 z 方向的位移会被压成画面里的纵向位移
+  if(R3.shadow){
+    R3.shadow.position.x = R3.mover.position.x;
+    R3.shadow.position.y = P.shadowY - R3.mover.position.z * Math.sin(P.pitch);
+    R3.shadow.position.z = R3.mover.position.z * Math.cos(P.pitch);
+  }
+}
+
 /* 载入动作后预处理：
    ① 把位移最大的那条 position 轨道按 moveScale 压缩（原位移远大于角色本身，
       不压会整个跑出画面；手部的推拉幅度只有它的 1/10，不受影响）
@@ -1241,12 +1339,46 @@ function prepareWorkMotion(g, c){
     }
     if(amp > bestAmp){ bestAmp = amp; best = tr; }
   }
-  if(best && c.moveScale < 1){
+
+  /* 原动作的水平行进方向（角色是朝着行进方向擦的）。
+     走自定义轨迹时按这个方向算朝向，这样"走起来"的姿态和原来一致。 */
+  let dir0 = [0, -1];
+  if(best){
+    const v = best.values, n = v.length / 3;
+    const dx = v[(n-1)*3] - v[0], dz = v[(n-1)*3+2] - v[0];
+    const L = Math.hypot(dx, dz);
+    if(L > 1e-5) dir0 = [dx / L, dz / L];
+    else {
+      // 来回擦、没有净位移：取方差更大的那条水平轴
+      let mx = 0, mz = 0, vx = 0, vz = 0;
+      for(let i = 0; i < n; i++){ mx += v[i*3] / n; mz += v[i*3+2] / n; }
+      for(let i = 0; i < n; i++){
+        const ax = v[i*3] - mx, az = v[i*3+2] - mz;
+        vx += ax * ax; vz += az * az;
+      }
+      dir0 = vx >= vz ? [1, 0] : [0, 1];
+    }
+  }
+
+  // 走自定义轨迹的角色：位移整段压平（原地动作），移动交给代码
+  const keep = c.path ? 0 : c.moveScale;
+  if(best && keep < 1){
     const v = best.values, n = v.length / 3;
     const av = [0, 0, 0];
     for(let i = 0; i < n; i++) for(let k = 0; k < 3; k++) av[k] += v[i*3+k] / n;
     for(let i = 0; i < n; i++) for(let k = 0; k < 3; k++)
-      v[i*3+k] = av[k] + (v[i*3+k] - av[k]) * c.moveScale;
+      v[i*3+k] = av[k] + (v[i*3+k] - av[k]) * keep;
+  }
+  /* 同一根骨骼的旋转也锁住。原动作是"边走边转"，位移被我们换成轨迹之后，
+     留在原地转就变成原地打转、脸朝哪边全看运气；锁在第一帧的朝向上，
+     朝向交给轨迹统一控制。 */
+  if(c.path && best){
+    const node = best.name.replace(/\.position$/, '');
+    for(const tr of clip.tracks){
+      if(tr.name !== node + '.quaternion') continue;
+      const q = Array.from(tr.values.slice(0, 4));
+      for(let i = 0; i < tr.values.length; i++) tr.values[i] = q[i % 4];
+    }
   }
 
   // 采样 20 帧量全程包围盒
@@ -1262,7 +1394,28 @@ function prepareWorkMotion(g, c){
   mixer.stopAllAction();
   // 复位到第一帧，避免残留姿态影响后续
   obj.updateMatrixWorld(true);
-  g.userData.fit = { box: full.clone(), pitch: (c.pitch || 0) * Math.PI / 180 };
+
+  /* 自定义轨迹（模型单位是米，cm × 0.01）：
+     老师要 dd 沿一个 5cm × 6cm 的长方形边线擦桌子。
+     包围盒按「体块 + 整圈轨迹」扩——不是把角色放大，是让归一化时
+     整圈都在画面里，别走到边上就被裁掉。 */
+  let path = null;
+  if(c.path){
+    const hw = c.path.w * 0.01 / 2;
+    const hd = c.path.h * 0.01 / 2;
+    path = {
+      hw, hd,
+      loop: c.path.loop || 11,
+      corner: (c.path.corner || 1.4) * 0.01,
+      spin: c.path.spin == null ? 0 : c.path.spin,
+      yaw: (c.path.yaw || 0) * Math.PI / 180,
+      dir0,
+    };
+    full.min.x -= hw; full.max.x += hw;
+    full.min.z -= hd; full.max.z += hd;
+  }
+
+  g.userData.fit = { box: full.clone(), pitch: (c.pitch || 0) * Math.PI / 180, path };
 }
 
 /* 载入并摆好一个角色 */
@@ -1319,6 +1472,9 @@ async function showCharacter(key){
   // 清掉上一个
   while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
   R3.mixer = null;
+  R3.path = null;
+  R3.mover = null;
+  R3.spin = null;
 
   if(gltf){
     const obj = gltf.scene;
@@ -1332,22 +1488,36 @@ async function showCharacter(key){
     const ps = projSize(box, pitch);
     let s = (R3.visH * 0.46) / Math.max(ps.y, 1e-6);
     if(ps.x * s > R3.visW * 0.84) s = (R3.visW * 0.84) / ps.x;
+    R3.fit = { box, center, s, pitch };     // 抬落点时要用（整段动作的外壳）
 
     obj.scale.setScalar(s);
     obj.position.set(-center.x * s, -center.y * s, -center.z * s);
 
-    // 俯视角：水平面上的动作要俯过来看才看得清
+    /* pivot 负责俯视角，mover 负责沿轨迹移动，spin 负责朝向。
+       spin 是"体块中心"处的空节点——obj 已经把体块中心挪到原点，
+       所以绕 spin 转就是绕角色自身转，不会画出弧线。 */
     R3.pivot = new THREE.Group();
     R3.pivot.rotation.x = pitch;
-    R3.pivot.add(obj);
+    R3.mover = new THREE.Group();
+    R3.spin  = new THREE.Group();
+    R3.spin.add(obj);
+    R3.mover.add(R3.spin);
+    R3.pivot.add(R3.mover);
     R3.group.add(R3.pivot);
-    R3.group.position.set(0, R3.visH * (c.yFrac || -0.16), 0);
+
+    const baseY = R3.visH * (c.yFrac || -0.16);
+    R3.group.position.set(0, baseY, 0);
 
     // 接触影：贴在动作面的下方
     const w = ps.x * s;
     R3.shadow.scale.set(w * 0.62, 1, w * 0.42);
-    R3.shadow.position.set(0, R3.visH * (c.yFrac || -0.16) - ps.y * s * 0.52 + 0.001, 0);
+    R3.shadow.position.set(0, baseY - ps.y * s * 0.52 + 0.001, 0);
     R3.shadow.visible = true;
+
+    // 走轨迹的角色：参数交给主循环，每帧推进位置与朝向
+    const pcfg = fit && fit.path;
+    R3.path = pcfg ? { cfg: pcfg, s, pitch, t: 0, yaw: null,
+                       shadowY: baseY - ps.y * s * 0.52 + 0.001 } : null;
 
     if(gltf.animations && gltf.animations.length){
       R3.mixer = new THREE.AnimationMixer(obj);
@@ -1374,6 +1544,47 @@ async function showCharacter(key){
   }
 
   revealShowUI(c);
+  fitShowAboveUI();
+}
+
+/* 把角色抬到台词上方。底部 UI 的像素高度基本固定，角色却是按画面比例
+   缩放的——矮屏上同一个 yFrac 就会压到名字/台词上。
+   这里不用当前帧的姿态量，而是用"整段动作 + 整圈轨迹"的外壳量：
+   取水平半径的最大值覆盖任意朝向，保证动作走到哪一帧都不会压上去。 */
+function fitShowAboveUI(){
+  if(R3.flat || !R3.group || !R3.pivot || !R3.camera || !R3.fit) return;
+  const tag = showEl.querySelector('#showTag');
+  if(!tag) return;
+  const rect = tag.getBoundingClientRect();
+  if(!rect.height) return;
+
+  const { box, center, s, pitch } = R3.fit;
+  const cs = Math.cos(pitch), sn = Math.sin(pitch);
+  const r = Math.max(
+    Math.abs(box.min.x - center.x), Math.abs(box.max.x - center.x),
+    Math.abs(box.min.z - center.z), Math.abs(box.max.z - center.z)) * s;
+
+  R3.camera.updateMatrixWorld();
+  R3.camera.updateProjectionMatrix();
+  const v = new THREE.Vector3();
+  let bottom = -1e9;
+  for(const y of [(box.min.y - center.y) * s, (box.max.y - center.y) * s])
+    for(const z of [-r, r]){
+      const wy = y * cs - z * sn + R3.group.position.y;
+      const wz = y * sn + z * cs;
+      v.set(0, wy, wz).project(R3.camera);
+      const sy = (-v.y * 0.5 + 0.5) * H;
+      if(sy > bottom) bottom = sy;
+    }
+
+  const gap = 26;                 // 和名字之间留一条缝，别贴上去
+  const over = bottom - (rect.top - gap);
+  if(over <= 0) return;
+
+  const dy = over * (R3.visH / Math.max(H, 1));   // 屏幕 px → 世界单位
+  R3.group.position.y += dy;
+  R3.shadow.position.y += dy;
+  if(R3.path) R3.path.shadowY += dy;
 }
 
 /* 展示页文案（3D / 2D 两条路共用） */
@@ -1389,6 +1600,10 @@ function hideShow(){
   document.body.classList.remove('showing');
   showEl.classList.add('hide');
   R3.flatImg = null;
+  R3.path = null;
+  R3.mover = null;
+  R3.spin = null;
+  R3.fit = null;
   if(R3.flat) return;              // 没有 WebGL 就没有 group/shadow
   while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
   R3.shadow.visible = false;
@@ -1398,17 +1613,18 @@ function hideShow(){
 function syncShow(dt){
   if(R3.mixer) R3.mixer.update(dt);
   if(R3.flat) R3.flatT += dt;
+  if(R3.path) updatePathMotion(dt);
 }
 
 /* 没有 WebGL 时的角色：2D 立绘踩着拍子上下弹、左右轻摆，做出"在干活"的动态。
-   脚底落在画面 66% 处，和 3D 版站的位置一致。 */
+   脚底落在画面 60% 处，和 3D 版站的位置一致（底部要留出名字、台词和按钮）。 */
 function drawFlatShow(){
   const img = R3.flatImg;
   if(!img || !img.naturalWidth) return;
   const t  = R3.flatT;
   const h  = H * 0.38;
   const w  = h * img.naturalWidth / img.naturalHeight;
-  const cx = W / 2, baseY = H * 0.66;
+  const cx = W / 2, baseY = H * 0.60;
   const ph = Math.PI / 0.42;                       // 0.42s 一拍
   const b  = Math.abs(Math.sin(t * ph));            // 0→1→0 的弹跳
   const dy = -h * 0.05 * b;
@@ -1613,6 +1829,137 @@ function outSize(){
   return { w: Math.max(1, Math.round(W * k)), h: Math.max(1, Math.round(H * k)) };
 }
 
+/* =========================================================================
+   8b. 端上人像分割（MediaPipe WASM，画面不出设备）
+   作用：把「你」抠成单独一层，插在贴纸图层中间 ——
+         z 小的贴纸排在你后面（被你挡住），z 大的排在你前面。
+   ========================================================================= */
+const SEG = {
+  ready:false, loading:false, failed:false, on:false,
+  seg:null, mask:null, maskCtx:null, lastT:0, busy:false,
+};
+
+/* wasm 有 9.4MB，只在第一次进拍照页时拉。走 blob 的原因：
+   线上分享链接只放行带 sharecode 的静态资源，而 MediaPipe 内部拼的
+   URL 带不上参数，会 403 —— 所以这里自己带参下载，再把内存里的
+   内容以 blob URL 交给它，两个地址都不经过网关。 */
+async function ensureSeg(){
+  if(SEG.ready || SEG.loading || SEG.failed) return;
+  SEG.loading = true;
+  const base = 'vendor/mediapipe/';
+  try{
+    const [mod, jsTxt, wasmBuf, modelBuf] = await Promise.all([
+      import('./' + base + 'vision_bundle.mjs' + Q),
+      fetch(base + 'wasm/vision_wasm_internal.js' + Q).then(r => r.text()),
+      fetch(base + 'wasm/vision_wasm_internal.wasm' + Q).then(r => r.arrayBuffer()),
+      fetch(base + 'selfie_segmenter.tflite' + Q).then(r => r.arrayBuffer()),
+    ]);
+    const fileset = {
+      wasmLoaderPath: URL.createObjectURL(new Blob([jsTxt], { type:'text/javascript' })),
+      wasmBinaryPath: URL.createObjectURL(new Blob([wasmBuf], { type:'application/wasm' })),
+    };
+    const opts = d => ({
+      baseOptions: { modelAssetBuffer: new Uint8Array(modelBuf), delegate: d },
+      runningMode: 'VIDEO',
+      outputCategoryMask: false,
+      outputConfidenceMasks: true,
+    });
+    let seg = null;
+    try{ seg = await mod.ImageSegmenter.createFromOptions(fileset, opts('GPU')); }
+    catch(e){ seg = await mod.ImageSegmenter.createFromOptions(fileset, opts('CPU')); }
+    if(!seg) throw new Error('no segmenter');
+    SEG.seg = seg;
+    SEG.ready = true;
+    SEG.on = true;
+    capPersonEl.classList.add('on');
+    applyStickerZ();                 // 人物层插进来，重排一次层级
+  }catch(e){
+    SEG.failed = true;
+    SEG.err = String((e && e.message) || e);
+    console.warn('[seg] 人像分割不可用，贴纸全部按「在人前面」处理', e);
+  }finally{
+    SEG.loading = false;
+  }
+}
+
+/* 置信度图 → alpha 掩膜。0.22 以下丢掉、0.62 以上全留，中间软过渡。 */
+function segMask(m){
+  const w = m.width, h = m.height;
+  const f = m.getAsFloat32Array();
+  if(!SEG.mask || SEG.mask.width !== w || SEG.mask.height !== h){
+    SEG.mask = document.createElement('canvas');
+    SEG.mask.width = w; SEG.mask.height = h;
+    SEG.maskCtx = SEG.mask.getContext('2d');
+  }
+  let mx = 0;
+  for(let i = 0; i < f.length; i += 89) if(f[i] > mx) mx = f[i];
+  const k = mx > 1.5 ? 1 / 255 : 1;          // 个别后端给 0..255
+  const img = SEG.maskCtx.createImageData(w, h);
+  const d = img.data;
+  for(let i = 0, p = 0; i < w * h; i++, p += 4){
+    const v = f[i] * k;
+    const a = v <= 0.22 ? 0 : v >= 0.62 ? 255 : ((v - 0.22) / 0.40 * 255) | 0;
+    d[p] = 255; d[p + 1] = 255; d[p + 2] = 255; d[p + 3] = a;
+  }
+  SEG.maskCtx.putImageData(img, 0, 0);
+}
+
+/* 把「只有你」画到画布上：相机帧按 cover 铺好，再用掩膜抠掉背景。
+   实时预览和成片共用这一份，镜像规则和 shoot() 画背景完全一致。
+   注意必须在离屏画布上抠（destination-in 会把整张画布一起擦掉，
+   直接画在成片上会把背景清成透明），抠完再整张贴回去。 */
+let _personBuf = null;
+function paintPerson(g, cw, ch){
+  if(!SEG.mask || !camEl.videoWidth) return false;
+  if(!_personBuf) _personBuf = document.createElement('canvas');
+  if(_personBuf.width !== cw || _personBuf.height !== ch){
+    _personBuf.width = cw; _personBuf.height = ch;
+  }
+  const b = _personBuf.getContext('2d');
+  b.clearRect(0, 0, cw, ch);
+
+  const vw = camEl.videoWidth, vh = camEl.videoHeight;
+  const sc = Math.max(cw / vw, ch / vh);
+  const dw = vw * sc, dh = vh * sc;
+  const dx = (cw - dw) / 2, dy = (ch - dh) / 2;
+  b.save();
+  if(camFacing === 'user'){ b.translate(cw, 0); b.scale(-1, 1); }
+  b.drawImage(camEl, cw - dx - dw, dy, dw, dh);
+  b.globalCompositeOperation = 'destination-in';
+  b.drawImage(SEG.mask, cw - dx - dw, dy, dw, dh);
+  b.restore();
+
+  g.drawImage(_personBuf, 0, 0, cw, ch);
+  return true;
+}
+
+/* 每帧：低频跑一次分割（约 8fps），再用最新掩膜 + 当前帧合成人物层。
+   掩膜慢半拍没关系，画面像素是实时的，只有边缘会略滞后。 */
+function updatePersonLayer(now){
+  if(G.state !== 'capture' || !SEG.on || !capPersonEl) return;
+  const rw = stickerLayer.clientWidth, rh = stickerLayer.clientHeight;
+  if(rw < 8 || rh < 8) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const cw = Math.round(rw * dpr), ch = Math.round(rh * dpr);
+  if(capPersonEl.width !== cw || capPersonEl.height !== ch){
+    capPersonEl.width = cw; capPersonEl.height = ch;
+  }
+  const g = capPersonEl.getContext('2d');
+  g.clearRect(0, 0, cw, ch);
+
+  if(SEG.ready && !SEG.busy && camEl.videoWidth && now - SEG.lastT > 120){
+    SEG.busy = true; SEG.lastT = now;
+    try{
+      const res = SEG.seg.segmentForVideo(camEl, now);
+      const ms = res && res.confidenceMasks;
+      if(ms && ms[0]) segMask(ms[0]);
+      if(res && res.close) res.close();
+    }catch(e){ /* 单帧失败不打断，等下一帧 */ }
+    SEG.busy = false;
+  }
+  paintPerson(g, cw, ch);
+}
+
 let shotDataUrl = '';
 let placedStickers = [];        // { key, el, x, y, w, h, z }  x/y = 左上角(CSS px)
 let stickerSeq = 0;
@@ -1629,19 +1976,25 @@ function clearStickers(){
   if(layerBarEl) layerBarEl.classList.remove('on');
 }
 
-/* 图层：按 s.z 从小到大排，大的压在上面（成片也照这个顺序画） */
+/* 图层：按 z 从小到大排，大的压在上面（成片也照这个顺序画）。
+   人物层固定占 PERSON_Z 这一档：贴纸从 1 开始编号 → 拖出来默认在人前面；
+   点「放后面」会被推到 0 以下 → 落到人物层后面，被你自己挡住。 */
+const PERSON_Z = 0;
+
 function applyStickerZ(){
-  placedStickers.slice().sort((a,b) => a.z - b.z)
-    .forEach((s, i) => { if(s.el) s.el.style.zIndex = String(3 + i); });
+  const items = placedStickers.map(s => ({ el: s.el, z: s.z }));
+  if(SEG.on && capPersonEl) items.push({ el: capPersonEl, z: PERSON_Z });
+  items.sort((a, b) => a.z - b.z);
+  items.forEach((it, i) => { if(it.el) it.el.style.zIndex = String(3 + i); });
 }
 function bringToFront(s){
-  const maxZ = placedStickers.reduce((m,x) => Math.max(m, x.z), 0);
+  const maxZ = placedStickers.reduce((m,x) => Math.max(m, x.z), PERSON_Z);
   s.z = maxZ + 1;
   applyStickerZ();
 }
 function sendToBack(s){
-  const minZ = placedStickers.reduce((m,x) => Math.min(m, x.z), 0);
-  s.z = minZ - 1;
+  const minZ = placedStickers.reduce((m,x) => Math.min(m, x.z), PERSON_Z + 1);
+  s.z = Math.min(minZ, PERSON_Z) - 1;
   applyStickerZ();
 }
 
@@ -1692,7 +2045,7 @@ function buildStickerBar(keys){
     document.getElementById('stickerBarHint').textContent = '还没有收集到伙伴，先去扫描贴纸吧';
     return;
   }
-  document.getElementById('stickerBarHint').textContent = '拖出伙伴 · 点一下调前后 · 拖到右上角删除';
+  document.getElementById('stickerBarHint').textContent = '拖出伙伴 · 点一下调前后（放后面会被你挡住）· 拖到右上角删除';
   has.forEach(k => {
     const c = CHARS[k];
     const b = document.createElement('div');
@@ -1897,6 +2250,9 @@ async function openCapture(opts){
   buildStickerBar(capKeys);
   // 画面初始留空，伙伴从底部白框手动拖出来摆放
 
+  SEG.lastT = 0;
+  ensureSeg();          // 后台起人像分割（首次约 1~2 秒）；没好之前贴纸一律在最前面
+
   if(!camStream){
     await openCam(camFacing);
   } else {
@@ -1910,6 +2266,10 @@ async function closeCapture(){
   shotEl.classList.add('hide');
   document.body.classList.remove('capturing');
   G.state = 'over';
+  if(capPersonEl){                  // 清掉残留的人物层，下次进来不闪一帧旧画面
+    const pg = capPersonEl.getContext('2d');
+    pg.clearRect(0, 0, capPersonEl.width, capPersonEl.height);
+  }
 
   // 从「和它合照」进来且还没收集齐：拍完直接回扫描页继续找
   if(capBack === 'scan' && !allDone()){
@@ -1957,8 +2317,14 @@ function shoot(){
   // 用统一 scale 等比放大，贴纸不被压扁。
   const layerRect = stickerLayer.getBoundingClientRect();
   const sc = OUT_W / layerRect.width;
-  // 按图层顺序画：z 大的后画，压在别人上面（和屏幕上看到的一致）
-  placedStickers.slice().sort((a,b) => a.z - b.z).forEach(s => {
+  /* 按图层顺序画：人物层固定占 z=0 那一档。
+     比它小的贴纸先画 → 被人物盖住；大的后画 → 压在人物身上。 */
+  const items = placedStickers.map(s => ({ s, z: s.z }));
+  if(SEG.on) items.push({ person: true, z: PERSON_Z });
+  items.sort((a, b) => a.z - b.z);
+  items.forEach(it => {
+    if(it.person){ paintPerson(g, OUT_W, OUT_H); return; }
+    const s = it.s;
     const img = CHAR_IMG(s.key);
     if(!img || !img.naturalWidth) return;
     const dw = s.w * sc;
@@ -2025,6 +2391,7 @@ function loop(ts){
 
   if(G.state === 'scan') updateScan(dt);
   if(G.state === 'show') syncShow(dt);
+  if(G.state === 'capture') updatePersonLayer(ts);
 
   /* 摄像头自愈 */
   if(camStream && (camEl.paused || !camEl.videoWidth) && G.state !== 'capture' && ts > camHealAt){
@@ -2075,7 +2442,13 @@ $('layerFront').addEventListener('click', () => {
   if(selSticker){ ensureAudio(); bringToFront(selSticker); }
 });
 $('layerBack').addEventListener('click', () => {
-  if(selSticker){ ensureAudio(); sendToBack(selSticker); }
+  if(selSticker){
+    ensureAudio();
+    sendToBack(selSticker);
+    // 人物层还没起来时，放后面看不出效果——给一句话说明
+    if(!SEG.on) toast(SEG.failed ? '这台设备不支持人物遮挡，伙伴都在最前面'
+                                 : '人物识别还在准备，稍等一下就有效果了');
+  }
 });
 // 点空白处取消选中
 capEl.addEventListener('pointerdown', e => {
@@ -2096,9 +2469,9 @@ if(/[?&]demo=1/.test(location.search || '')){
 }
 
 window.__WORK = {
-  G, CONFIG, CHARS, ORDER, SCAN, R3,
+  G, CONFIG, CHARS, ORDER, SCAN, R3, SEG,
   bootScan, analyzeShapes, onFound, showCharacter, showOver, openCapture,
-  shoot, closeCapture,
+  shoot, closeCapture, rectPathAt, applyStickerZ, PERSON_Z, hideShow,
   get showingKey(){ return showingKey; },
   get placedStickers(){ return placedStickers; },
   get selSticker(){ return selSticker; },
