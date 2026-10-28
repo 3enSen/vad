@@ -449,7 +449,7 @@
       </div>
     </div>
     <div class="capActions">
-      <button class="btn ghost" id="showReplay" type="button">再看一遍</button>
+      <button class="btn ghost" id="showPhoto" type="button">和它合照</button>
       <button class="btn" id="showNext" type="button">继续找下一个</button>
     </div>
   </div>
@@ -550,15 +550,15 @@ const CHARS = {
   v: { key:'v', name:'vv', accent:'#4A9EFF', img:'chars/v.png',
        glb:'characters/wipe/wipe_floor.glb',
        work:'擦地板', plane:'水平面', pitch:38, moveScale:0.42, yFrac:-0.15,
-       shape:'drop', shapeName:'水滴', cap:'趴在地上擦地板，一寸都没落下' },
+       shape:'drop', shapeName:'水滴', cap:'正在认真擦地板，一寸都没落下' },
   a: { key:'a', name:'aa', accent:'#FF7A45', img:'chars/a.png',
        glb:'characters/wipe/wipe_glass.glb',
-       work:'擦玻璃', plane:'垂直平面', pitch:0, moveScale:0.60, yFrac:-0.04,
-       shape:'bubble', shapeName:'泡泡', cap:'举着手擦玻璃，从上到下全擦遍' },
+       work:'擦玻璃', plane:'垂直平面', pitch:0, moveScale:0.32, yFrac:-0.04,
+       shape:'bubble', shapeName:'泡泡', cap:'擦玻璃，脑袋怎么晕晕的' },
   d: { key:'d', name:'dd', accent:'#FF8FAB', img:'chars/d.png',
        glb:'characters/wipe/wipe_table.glb',
        work:'擦桌子', plane:'水平面', pitch:32, moveScale:0.42, yFrac:-0.11,
-       shape:'balloon', shapeName:'气球', cap:'把桌面擦得能照出人影' },
+       shape:'balloon', shapeName:'气球', cap:'嘿咻嘿咻嘿咻' },
 };
 const ORDER = ['v', 'a', 'd'];
 
@@ -614,7 +614,7 @@ const showEl    = $('showUI');
 const showNameEl= $('showName');
 const showCapEl = $('showCap');
 const showNextBtn = $('showNext');
-const showReplayBtn = $('showReplay');
+const showPhotoBtn = $('showPhoto');
 const loadTipEl = $('loadTip');
 const overEl    = $('overSheet');
 const tplCards  = $('tplCards');
@@ -1303,19 +1303,6 @@ function revealShowUI(c){
   showEl.classList.remove('hide');
 }
 
-/* 再看一遍：动作从头播 */
-function replayShow(){
-  if(R3.flat){ R3.flatT = 0; return; }
-  if(showingKey && R3.cache[showingKey] && R3.mixer){
-    const gltf = R3.cache[showingKey];
-    if(gltf.animations && gltf.animations.length){
-      R3.mixer.stopAllAction();
-      const act = R3.mixer.clipAction(gltf.animations[0]);
-      act.reset().play();
-    }
-  }
-}
-
 function hideShow(){
   showingKey = null;
   document.body.classList.remove('showing');
@@ -1486,6 +1473,12 @@ function showOver(){
   hideShow();
   scanSheet.classList.add('hide');
   SFX.win();
+  refreshOverCards();
+  overEl.classList.remove('hide');
+}
+
+/* 刷新结算页的卡片与文案（重进结算页时也要走一遍，否则会留着旧内容） */
+function refreshOverCards(){
   buildCards();
   const n = ORDER.filter(k => G.collected[k]).length;
   const t = $('overTitle'), s = $('overSub');
@@ -1497,7 +1490,6 @@ function showOver(){
     s.textContent = '继续扫描，认识更多伙伴吧';
   }
   $('photoBtn').style.display = n > 0 ? '' : 'none';
-  overEl.classList.remove('hide');
 }
 
 function buildCards(){
@@ -1553,10 +1545,11 @@ function clearStickers(){
   placedStickers = [];
 }
 
-/* 底部伙伴栏：收集了谁就显示谁 */
-function buildStickerBar(){
+/* 底部伙伴栏：传 keys 就只显示这些，不传就显示所有已收集的 */
+function buildStickerBar(keys){
   stickerBarRow.innerHTML = '';
-  const has = ORDER.filter(k => G.collected[k]);
+  const has = (keys && keys.length) ? keys.filter(k => CHARS[k])
+                                    : ORDER.filter(k => G.collected[k]);
   if(!has.length){
     document.getElementById('stickerBarHint').textContent = '还没有收集到伙伴，先去扫描贴纸吧';
     return;
@@ -1711,19 +1704,28 @@ function bindStickerDrag(el, s){
   el.addEventListener('lostpointercapture', onUp);
 }
 
-/* 打开拍照页 */
-async function openCapture(){
+/* 打开拍照页
+   opts.keys：底部白框里只放这些伙伴（不传 = 所有已收集的）
+   opts.back：拍完点「完成」后回哪（'over' 结算页 / 'scan' 扫描页） */
+let capKeys = null;        // 本次拍照可用的伙伴（null = 全部已收集）
+let capBack = 'over';      // 拍完回哪
+
+async function openCapture(opts){
   ensureAudio();
+  capKeys = (opts && opts.keys) ? opts.keys.slice() : null;
+  capBack = (opts && opts.back) || 'over';
+
   G.state = 'capture';
   overEl.classList.add('hide');
   scanSheet.classList.add('hide');
   shotEl.classList.add('hide');
   showEl.classList.add('hide');
+  hideShow();                      // 清掉实景里的 3D 角色，拍照页画面留空
   capEl.classList.remove('hide');
   document.body.classList.add('capturing');
 
   clearStickers();
-  buildStickerBar();
+  buildStickerBar(capKeys);
   // 画面初始留空，伙伴从底部白框手动拖出来摆放
 
   if(!camStream){
@@ -1733,13 +1735,22 @@ async function openCapture(){
   }
 }
 
-/* 关闭拍照页，回结算 */
+/* 关闭拍照页 */
 async function closeCapture(){
   capEl.classList.add('hide');
   shotEl.classList.add('hide');
   document.body.classList.remove('capturing');
-  overEl.classList.remove('hide');
   G.state = 'over';
+
+  // 从「和它合照」进来且还没收集齐：拍完直接回扫描页继续找
+  if(capBack === 'scan' && !allDone()){
+    overEl.classList.add('hide');
+    await bootScan();
+    return;
+  }
+
+  overEl.classList.remove('hide');
+  refreshOverCards();
   if(!camStream){
     await openCam('environment');
   } else {
@@ -1862,7 +1873,12 @@ function loop(ts){
    11. 绑定与启动
    ========================================================================= */
 showNextBtn.addEventListener('click', () => { ensureAudio(); showNext(); });
-showReplayBtn.addEventListener('click', () => { ensureAudio(); replayShow(); });
+showPhotoBtn.addEventListener('click', () => {
+  ensureAudio();
+  const k = showingKey;            // 先取：openCapture 会清掉展示态
+  if(!k) return;
+  openCapture({ keys: [k], back: 'scan' });
+});
 scanGoBtn.addEventListener('click', () => { ensureAudio(); showOver(); });
 $('photoBtn').addEventListener('click', () => { openCapture(); });
 $('laterBtn').addEventListener('click', () => { ensureAudio(); collectLater(); });
@@ -1904,6 +1920,8 @@ window.__WORK = {
   shoot, closeCapture,
   get showingKey(){ return showingKey; },
   get placedStickers(){ return placedStickers; },
+  get capKeys(){ return capKeys; },
+  get capBack(){ return capBack; },
 };
 
 loadStore();
