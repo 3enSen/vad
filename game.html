@@ -287,6 +287,9 @@
     filter:drop-shadow(0 16px 28px rgba(20,16,14,.40));
     z-index:10;
   }
+  /* 选中态：点一下贴纸就能选它，调前后遮挡关系 */
+  .sticker.sel{outline:2px dashed rgba(255,255,255,.92);outline-offset:5px;border-radius:8px}
+  .sticker.overTrash{opacity:.55}
 
   /* 左上角返回 */
   #capBack{
@@ -301,6 +304,55 @@
   }
   #capBack:active{transform:scale(.92)}
   #capBack svg{width:22px;height:22px}
+
+  /* 右上角垃圾桶：把已经摆到画面上的伙伴拖上来即删除 */
+  #capTrash{
+    position:absolute;z-index:6;
+    right:14px;top:calc(env(safe-area-inset-top,0px) + 14px);
+    width:44px;height:44px;border-radius:50%;border:none;
+    background:rgba(20,16,14,.46);color:#fff;
+    display:grid;place-items:center;cursor:pointer;
+    backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+    box-shadow:0 6px 16px rgba(20,16,14,.22);
+    transition:transform .16s ease, background .16s ease;
+  }
+  #capTrash svg{width:21px;height:21px}
+  #capTrash.hot{background:#E4572E;transform:scale(1.16)}
+  #capTrash:active{transform:scale(.92)}
+
+  /* 右下角翻转镜头：和快门同一条水平中线 */
+  #capFlip{
+    position:absolute;z-index:6;
+    right:20px;
+    bottom:calc(env(safe-area-inset-bottom,0px) + 182px);
+    width:52px;height:52px;border-radius:50%;border:none;
+    background:rgba(20,16,14,.46);color:#fff;
+    display:grid;place-items:center;cursor:pointer;
+    backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);
+    box-shadow:0 6px 16px rgba(20,16,14,.22);
+    transition:transform .16s ease;
+  }
+  #capFlip svg{width:24px;height:24px}
+  #capFlip:active{transform:scale(.90)}
+
+  /* 选中贴纸后的图层工具条 */
+  #layerBar{
+    position:absolute;z-index:7;
+    left:50%;transform:translateX(-50%);
+    top:calc(env(safe-area-inset-top,0px) + 14px);
+    display:none;gap:6px;padding:6px;border-radius:99px;
+    background:rgba(20,16,14,.62);
+    backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    box-shadow:0 8px 22px rgba(20,16,14,.28);
+  }
+  #layerBar.on{display:flex}
+  #layerBar button{
+    border:none;background:rgba(255,255,255,.15);color:#fff;
+    font-family:inherit;font-size:12.5px;font-weight:700;letter-spacing:.04em;
+    padding:8px 15px;border-radius:99px;cursor:pointer;
+    -webkit-tap-highlight-color:transparent;
+  }
+  #layerBar button:active{background:rgba(255,255,255,.34)}
 
   /* 底部白色伙伴栏 */
   #stickerBar{
@@ -404,6 +456,8 @@
     .stickerSrc{width:52px;height:52px}
     #shutterBtn{bottom:calc(env(safe-area-inset-bottom,0px) + 150px);width:64px;height:64px}
     #shutterBtn .ring{width:52px;height:52px}
+    #capFlip{bottom:calc(env(safe-area-inset-bottom,0px) + 158px);width:46px;height:46px}
+    #capFlip svg{width:21px;height:21px}
     #shotImg{max-height:48vh}
     .tplCard{width:min(28vw,112px);padding:12px 6px 10px}
   }
@@ -479,13 +533,37 @@
       </svg>
     </button>
 
+    <button id="capTrash" type="button" aria-label="删除伙伴">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 7h16M9.5 7V4.6h5V7M6.4 7l.9 12.3h9.4L17.6 7"/>
+        <path d="M10.2 10.6v5.6M13.8 10.6v5.6"/>
+      </svg>
+    </button>
+
+    <div id="layerBar">
+      <button id="layerFront" type="button">放前面</button>
+      <button id="layerBack" type="button">放后面</button>
+    </div>
+
     <div id="stickerBar">
-      <div id="stickerBarHint">把伙伴拖出来一起合照</div>
+      <div id="stickerBarHint">拖出伙伴 · 点一下调前后 · 拖到右上角删除</div>
       <div id="stickerBarRow"></div>
     </div>
 
     <button id="shutterBtn" type="button" aria-label="拍照">
       <span class="ring"></span>
+    </button>
+
+    <button id="capFlip" type="button" aria-label="翻转镜头">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"
+           stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.2 9.4A8 8 0 0 1 18 6.6l1.9 1.8"/>
+        <path d="M19.8 4.6v3.9h-3.9"/>
+        <path d="M19.8 14.6A8 8 0 0 1 6 17.4l-1.9-1.8"/>
+        <path d="M4.2 19.4v-3.9h3.9"/>
+        <circle cx="12" cy="12" r="2.6"/>
+      </svg>
     </button>
   </div>
 
@@ -557,7 +635,7 @@ const CHARS = {
        shape:'bubble', shapeName:'泡泡', cap:'擦玻璃，脑袋怎么晕晕的' },
   d: { key:'d', name:'dd', accent:'#FF8FAB', img:'chars/d.png',
        glb:'characters/wipe/wipe_table.glb',
-       work:'擦桌子', plane:'水平面', pitch:32, moveScale:0.42, yFrac:-0.11,
+       work:'擦桌子', plane:'水平面', pitch:78, moveScale:0.42, yFrac:-0.11,
        shape:'balloon', shapeName:'气球', cap:'嘿咻嘿咻嘿咻' },
 };
 const ORDER = ['v', 'a', 'd'];
@@ -622,6 +700,9 @@ const capEl     = $('capture');
 const stickerLayer = $('stickerLayer');
 const stickerBarRow = $('stickerBarRow');
 const capBackBtn= $('capBack');
+const capTrashEl= $('capTrash');
+const capFlipEl = $('capFlip');
+const layerBarEl= $('layerBar');
 const shutterBtn= $('shutterBtn');
 const shotEl    = $('shotSheet');
 const shotImg   = $('shotImg');
@@ -1533,8 +1614,9 @@ function outSize(){
 }
 
 let shotDataUrl = '';
-let placedStickers = [];        // { key, el, x, y, w }  x/y = 左上角(CSS px)，w = 宽
+let placedStickers = [];        // { key, el, x, y, w, h, z }  x/y = 左上角(CSS px)
 let stickerSeq = 0;
+let selSticker = null;          // 当前选中的贴纸（调前后遮挡用）
 
 /* 伙伴贴纸默认尺寸（CSS px，占画面宽比例） */
 const STICKER_W = () => Math.round(Math.min(W, H) * 0.28);
@@ -1543,6 +1625,62 @@ const STICKER_W = () => Math.round(Math.min(W, H) * 0.28);
 function clearStickers(){
   placedStickers.forEach(s => { if(s.el && s.el.parentNode) s.el.parentNode.removeChild(s.el); });
   placedStickers = [];
+  selSticker = null;
+  if(layerBarEl) layerBarEl.classList.remove('on');
+}
+
+/* 图层：按 s.z 从小到大排，大的压在上面（成片也照这个顺序画） */
+function applyStickerZ(){
+  placedStickers.slice().sort((a,b) => a.z - b.z)
+    .forEach((s, i) => { if(s.el) s.el.style.zIndex = String(3 + i); });
+}
+function bringToFront(s){
+  const maxZ = placedStickers.reduce((m,x) => Math.max(m, x.z), 0);
+  s.z = maxZ + 1;
+  applyStickerZ();
+}
+function sendToBack(s){
+  const minZ = placedStickers.reduce((m,x) => Math.min(m, x.z), 0);
+  s.z = minZ - 1;
+  applyStickerZ();
+}
+
+/* 选中 / 取消选中（选中后顶部出现「放前面 / 放后面」） */
+function selectSticker(s){
+  if(selSticker === s){
+    selSticker = null;
+    s.el.classList.remove('sel');
+    layerBarEl.classList.remove('on');
+    return;
+  }
+  if(selSticker && selSticker.el) selSticker.el.classList.remove('sel');
+  selSticker = s;
+  s.el.classList.add('sel');
+  layerBarEl.classList.add('on');
+}
+function clearSelect(){
+  if(selSticker && selSticker.el) selSticker.el.classList.remove('sel');
+  selSticker = null;
+  layerBarEl.classList.remove('on');
+}
+
+/* 删掉一个已摆放的伙伴 */
+function removeSticker(s){
+  if(!s) return;
+  if(s.el && s.el.parentNode) s.el.parentNode.removeChild(s.el);
+  const i = placedStickers.indexOf(s);
+  if(i >= 0) placedStickers.splice(i, 1);
+  if(selSticker === s) clearSelect();
+  applyStickerZ();
+}
+
+/* 手指是否落在垃圾桶上 */
+function overTrash(x, y){
+  if(!capTrashEl || capTrashEl.hidden) return false;
+  const r = capTrashEl.getBoundingClientRect();
+  if(!r.width) return false;
+  const pad = 10;
+  return x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
 }
 
 /* 底部伙伴栏：传 keys 就只显示这些，不传就显示所有已收集的 */
@@ -1554,7 +1692,7 @@ function buildStickerBar(keys){
     document.getElementById('stickerBarHint').textContent = '还没有收集到伙伴，先去扫描贴纸吧';
     return;
   }
-  document.getElementById('stickerBarHint').textContent = '把伙伴拖出来一起合照';
+  document.getElementById('stickerBarHint').textContent = '拖出伙伴 · 点一下调前后 · 拖到右上角删除';
   has.forEach(k => {
     const c = CHARS[k];
     const b = document.createElement('div');
@@ -1585,25 +1723,34 @@ function onStickerSrcDown(e, key){
   moveAt(e, el, w, h);
   el.style.zIndex = 20;
 
-  const onMove = ev => { ev.preventDefault(); moveAt(ev, el, w, h); };
+  const onMove = ev => {
+    ev.preventDefault();
+    moveAt(ev, el, w, h);
+    const hot = overTrash(ev.clientX, ev.clientY);
+    capTrashEl.classList.toggle('hot', hot);
+    el.classList.toggle('overTrash', hot);
+  };
   const onUp = ev => {
     el.removeEventListener('pointermove', onMove);
     el.removeEventListener('pointerup', onUp);
     el.removeEventListener('pointercancel', onUp);
-    el.classList.remove('dragging');
+    el.classList.remove('dragging', 'overTrash');
     el.style.zIndex = '';
-    // 落点：中心在 layer 内则落位，否则弹回（移除）
+    capTrashEl.classList.remove('hot');
+    // 落点：中心在 layer 内则落位；拖到垃圾桶上或框外就丢弃
     const r = el.getBoundingClientRect();
     const cx = r.left + r.width/2, cy = r.top + r.height/2;
-    if(cx >= layerRect.left && cx <= layerRect.right && cy >= layerRect.top && cy <= layerRect.bottom){
-      const s = { key, el, x: r.left - layerRect.left, y: r.top - layerRect.top, w: r.width, h: r.height };
+    const inLayer = cx >= layerRect.left && cx <= layerRect.right && cy >= layerRect.top && cy <= layerRect.bottom;
+    if(inLayer && !overTrash(ev.clientX, ev.clientY)){
+      const s = { key, el, x: r.left - layerRect.left, y: r.top - layerRect.top, w: r.width, h: r.height, z: ++stickerSeq };
       el.style.left = s.x + 'px';
       el.style.top  = s.y + 'px';
       el.style.transform = '';
       bindStickerDrag(el, s);
       placedStickers.push(s);
+      applyStickerZ();
     } else {
-      el.parentNode.removeChild(el);
+      if(el.parentNode) el.parentNode.removeChild(el);
     }
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
@@ -1627,12 +1774,15 @@ function applyStickerPos(el, s){
   el.style.height = s.h + 'px';
 }
 
-/* 已摆放的贴纸：单指拖动位置，双指缩放大小 */
+/* 已摆放的贴纸：单指拖动位置，双指缩放大小，
+   轻点一下选中（调前后遮挡），拖到右上角垃圾桶上松手即删除 */
 function bindStickerDrag(el, s){
   const pointers = new Map();   // pointerId -> {x, y}
   let startDist = 0, startW = 0, startH = 0;
   let dragBase = null;          // 单指拖动基准
   let pinchBase = null;         // 双指缩放基准
+  let moved = 0;                // 本次按下累计移动距离（判定轻点用）
+  let hitTrash = false;
 
   el.addEventListener('pointerdown', e => {
     e.preventDefault();
@@ -1640,6 +1790,7 @@ function bindStickerDrag(el, s){
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     el.classList.add('dragging');
     el.style.zIndex = 20;
+    if(pointers.size === 1){ moved = 0; hitTrash = false; }
 
     if(pointers.size === 1){
       const p = pointers.get(e.pointerId);
@@ -1658,7 +1809,9 @@ function bindStickerDrag(el, s){
 
   el.addEventListener('pointermove', e => {
     if(!pointers.has(e.pointerId)) return;
+    const prev = pointers.get(e.pointerId);
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    moved += Math.hypot(e.clientX - prev.x, e.clientY - prev.y);
 
     if(pointers.size === 1 && dragBase){
       // 单指拖动
@@ -1668,6 +1821,10 @@ function bindStickerDrag(el, s){
       s.x = clamp(s.x, -s.w*0.5, stickerLayer.offsetWidth  - s.w*0.5);
       s.y = clamp(s.y, -s.w*0.5, stickerLayer.offsetHeight - s.h*0.5);
       applyStickerPos(el, s);
+      // 拖到右上角垃圾桶上方：高亮提示
+      hitTrash = overTrash(e.clientX, e.clientY);
+      capTrashEl.classList.toggle('hot', hitTrash);
+      el.classList.toggle('overTrash', hitTrash);
     } else if(pointers.size === 2 && pinchBase){
       // 双指缩放（以两指中心为锚点）
       const pts = [...pointers.values()];
@@ -1687,11 +1844,23 @@ function bindStickerDrag(el, s){
 
   const onUp = e => {
     if(!pointers.has(e.pointerId)) return;
+    const dropOnTrash = pointers.size === 1 && moved > 4 && overTrash(e.clientX, e.clientY);
     pointers.delete(e.pointerId);
     if(pointers.size === 0){
-      el.classList.remove('dragging');
+      el.classList.remove('dragging', 'overTrash');
       el.style.zIndex = '';
+      capTrashEl.classList.remove('hot');
       dragBase = null; pinchBase = null;
+      if(dropOnTrash){
+        const nm = CHARS[s.key].name;
+        removeSticker(s);                                  // 丢进垃圾桶：删掉
+        toast('已删除 ' + nm);
+        return;
+      }
+      if(moved <= 6){                                     // 轻点：选中 / 取消
+        selectSticker(s);
+      }
+      applyStickerZ();
     } else if(pointers.size === 1){
       // 从双指回到单指：重新校准拖动基准
       const p = pointers.values().next().value;
@@ -1788,7 +1957,8 @@ function shoot(){
   // 用统一 scale 等比放大，贴纸不被压扁。
   const layerRect = stickerLayer.getBoundingClientRect();
   const sc = OUT_W / layerRect.width;
-  placedStickers.forEach(s => {
+  // 按图层顺序画：z 大的后画，压在别人上面（和屏幕上看到的一致）
+  placedStickers.slice().sort((a,b) => a.z - b.z).forEach(s => {
     const img = CHAR_IMG(s.key);
     if(!img || !img.naturalWidth) return;
     const dw = s.w * sc;
@@ -1900,6 +2070,17 @@ capBackBtn.addEventListener('click', () => {
   closeCapture();
 });
 shutterBtn.addEventListener('click', () => { ensureAudio(); shoot(); });
+capFlipEl.addEventListener('click', () => { ensureAudio(); capFlipEl.blur(); flipCamera(); });
+$('layerFront').addEventListener('click', () => {
+  if(selSticker){ ensureAudio(); bringToFront(selSticker); }
+});
+$('layerBack').addEventListener('click', () => {
+  if(selSticker){ ensureAudio(); sendToBack(selSticker); }
+});
+// 点空白处取消选中
+capEl.addEventListener('pointerdown', e => {
+  if(e.target === capEl || e.target === stickerLayer) clearSelect();
+}, true);
 $('shotDone').addEventListener('click', () => { ensureAudio(); closeCapture(); });
 $('retakeBtn').addEventListener('click', retake);
 
@@ -1920,8 +2101,10 @@ window.__WORK = {
   shoot, closeCapture,
   get showingKey(){ return showingKey; },
   get placedStickers(){ return placedStickers; },
+  get selSticker(){ return selSticker; },
   get capKeys(){ return capKeys; },
   get capBack(){ return capBack; },
+  flipCamera, removeSticker, bringToFront, sendToBack, selectSticker,
 };
 
 loadStore();
