@@ -556,7 +556,7 @@
     </div>
 
     <div id="stickerBar">
-      <div id="stickerBarHint">拖出伙伴 · 点一下调前后（放后面会被你挡住）· 拖到右上角删除</div>
+      <div id="stickerBarHint">拖出伙伴 · 点一下调前后 · 拖到右上角删除</div>
       <div id="stickerBarRow"></div>
     </div>
 
@@ -650,9 +650,11 @@ const CHARS = {
           （5cm × 6cm，模型单位是米 → ×0.01）。loop = 绕一圈的秒数，
           corner = 转角圆角（cm），让它在四角是拐弯不是硬折。
           yaw = 基准朝向（度）：原动作是绕圈擦的，锁掉根骨骼旋转后脸的
-          朝向是侧着的，转 90° 才是正面朝镜头（俯视下才看得出是 dd）。
+          朝向是侧着的，转 120° 脸才基本正对镜头。**不要用 90**——90 时气球
+          那个尖角正好朝着镜头，被透视压成一个小疙瘩，看着像"缺了角"；
+          135 时尖角横过来了，侧影里是一整根肥肥的气球尾巴（实测最像原片）。
           spin = 朝向跟随轨迹的比例，只跟一点点，多了会变成歪头。 */
-       path:{ w:5, h:6, loop:11, corner:1.4, yaw:90, spin:0.18 },
+       path:{ w:5, h:6, loop:11, corner:1.4, yaw:135, spin:0.18 },
        shape:'balloon', shapeName:'气球', cap:'嘿咻嘿咻嘿咻' },
 };
 const ORDER = ['v', 'a', 'd'];
@@ -2045,7 +2047,7 @@ function buildStickerBar(keys){
     document.getElementById('stickerBarHint').textContent = '还没有收集到伙伴，先去扫描贴纸吧';
     return;
   }
-  document.getElementById('stickerBarHint').textContent = '拖出伙伴 · 点一下调前后（放后面会被你挡住）· 拖到右上角删除';
+  document.getElementById('stickerBarHint').textContent = '拖出伙伴 · 点一下调前后 · 拖到右上角删除';
   has.forEach(k => {
     const c = CHARS[k];
     const b = document.createElement('div');
