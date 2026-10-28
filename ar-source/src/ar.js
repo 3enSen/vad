@@ -369,6 +369,18 @@ export function createARSession({ container, ui }) {
       throw new Error('此浏览器不支持摄像头访问。');
     }
 
+    mindar = new MindARThree({
+      container,
+      imageTargetSrc: TARGET_URL,
+      maxTrack: 1,
+      filterMinCF: 0.001,
+      filterBeta: 0.01,
+      warmupTolerance: 5,
+      missTolerance: 5,
+    });
+
+    ui.loading?.('正在打开摄像头…');
+    await mindar.start();
     // Ask for optional microphone access from the same explicit Start AR action.
     // AR remains usable if the user denies microphone permission.
     blowDetectorTask = startBlowDetector((durationMs) => {
@@ -390,21 +402,9 @@ export function createARSession({ container, ui }) {
       ui.microphoneUnavailable?.(error);
     });
 
-    const assetUrls = [TARGET_URL, ...CHARACTERS.flatMap((character) => [character.model, character.pat, character.pull])];
-    await Promise.all(assetUrls.map((url, index) => assertAssetAvailable(url, `AR 资源 ${index + 1}`)));
-
+    ui.loading?.('正在加载精灵…');
     const fbxLoader = new FBXLoader();
     const models = await Promise.all(CHARACTERS.map((character) => loadFbx(fbxLoader, character.model)));
-
-    mindar = new MindARThree({
-      container,
-      imageTargetSrc: TARGET_URL,
-      maxTrack: 1,
-      filterMinCF: 0.001,
-      filterBeta: 0.01,
-      warmupTolerance: 5,
-      missTolerance: 5,
-    });
 
     const { renderer, scene, camera } = mindar;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
@@ -452,7 +452,6 @@ export function createARSession({ container, ui }) {
       ui.lost();
     };
 
-    await mindar.start();
     removeScreenGestures = bindScreenGestures(renderer, camera);
 
     renderer.setAnimationLoop((now) => {
@@ -501,7 +500,9 @@ export function createARSession({ container, ui }) {
     blowDetector = null;
     if (mindar) {
       mindar.renderer.setAnimationLoop(null);
-      mindar.stop();
+      mindar.controller?.stopProcessVideo();
+      mindar.video?.srcObject?.getTracks().forEach(track => track.stop());
+      mindar.video?.remove();
       for (const record of characters) {
         for (const { mixer, variant } of record.variants.values()) {
           mixer.stopAllAction();

@@ -48,6 +48,9 @@ function explainError(error) {
 }
 
 const ui = {
+  loading(message) {
+    elements.start.textContent = message;
+  },
   initializing() {
     setStatus('准备中', 'loading');
     elements.debugInit.textContent = '初始化中';
@@ -104,6 +107,8 @@ const ui = {
     elements.debugTarget.textContent = '否';
     elements.debugModel.textContent = '否';
     elements.debugError.textContent = message;
+    elements.lostHint.textContent = message;
+    elements.lostHint.hidden = false;
     elements.photo.hidden = true;
   },
 };
@@ -134,6 +139,7 @@ elements.start.addEventListener('click', async () => {
   } finally {
     busy = false;
     elements.start.disabled = false;
+    elements.start.textContent = '启动 AR';
   }
 });
 
