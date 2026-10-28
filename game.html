@@ -59,6 +59,13 @@
     position:absolute;inset:0;width:100%;height:100%;
     touch-action:none;z-index:4;display:block;
   }
+  /* 脏污层：压在实景画布之上、3D 角色之下 —— 伙伴擦过的地方会变干净 */
+  canvas#grime{
+    position:absolute;inset:0;width:100%;height:100%;
+    pointer-events:none;z-index:4;display:block;
+    opacity:0;transition:opacity .5s ease;
+  }
+  canvas#grime.on{opacity:1}
 
   /* ---------- 覆盖页 ---------- */
   .sheet{
@@ -290,6 +297,11 @@
     object-fit:contain;pointer-events:none;
     -webkit-user-drag:none;user-select:none;
   }
+  /* 3D 版贴纸：每个伙伴一张 512² 的画布，里面是实时渲染的立体模型 */
+  .sticker canvas{
+    display:block;width:100%;height:100%;
+    pointer-events:none;
+  }
   .sticker.dragging{
     filter:drop-shadow(0 16px 28px rgba(20,16,14,.40));
     z-index:10;
@@ -479,6 +491,7 @@
 
   <canvas id="three"></canvas>
   <canvas id="game"></canvas>
+  <canvas id="grime"></canvas>
 
   <!-- 第一步：扫描收集（一次只找一个图形） -->
   <div class="sheet clear" id="scanSheet">
@@ -637,15 +650,18 @@ const CONFIG = {
 const CHARS = {
   v: { key:'v', name:'vv', accent:'#4A9EFF', img:'chars/v.png',
        glb:'characters/wipe/wipe_floor.glb',
+       static:'characters/static/v.glb',
        work:'擦地板', plane:'水平面', pitch:38, moveScale:0.42, yFrac:-0.07,
        shape:'drop', shapeName:'水滴', cap:'正在认真擦地板，一寸都没落下' },
   a: { key:'a', name:'aa', accent:'#FF7A45', img:'chars/a.png',
        glb:'characters/wipe/wipe_glass.glb',
+       static:'characters/static/a.glb',
        work:'擦玻璃', plane:'垂直平面', pitch:0, moveScale:0.32, yFrac:0.04,
        shape:'bubble', shapeName:'泡泡', cap:'擦玻璃，脑袋怎么晕晕的' },
   d: { key:'d', name:'dd', accent:'#FF8FAB', img:'chars/d.png',
        glb:'characters/wipe/wipe_table.glb',
-       work:'擦桌子', plane:'水平面', pitch:78, moveScale:0.42, yFrac:-0.03,
+       static:'characters/static/d.glb',
+       work:'擦桌子', plane:'水平面', pitch:90, moveScale:0.42, yFrac:-0.03,
        /* 运动轨迹：不再用动画里自带的直线位移，改成自己沿长方形边线绕
           （5cm × 6cm，模型单位是米 → ×0.01）。loop = 绕一圈的秒数，
           corner = 转角圆角（cm），让它在四角是拐弯不是硬折。
@@ -1155,7 +1171,8 @@ function updateScan(dt){
 const R3 = { ok:false, flat:false, flatImg:null, flatT:0,
              renderer:null, scene:null, camera:null, visH:0, visW:0,
              mixer:null, clip:null, group:null, shadow:null, cache:{},
-             pivot:null, mover:null, spin:null, path:null };
+             pivot:null, mover:null, spin:null, path:null,
+             rootBone:null, dirt:null };
 
 /* 先自己探一次，别让 three.js 在不支持的机器上往控制台报红 */
 function webglSupported(){
@@ -1417,6 +1434,10 @@ function prepareWorkMotion(g, c){
     full.min.z -= hd; full.max.z += hd;
   }
 
+  /* 根骨骼的名字：脏污要跟着"人"走，不是跟着外壳走。
+     位移是打在骨骼上的，取对象位置只会拿到原地不动的空壳。 */
+  if(best) g.userData.rootName = best.name.replace(/\.position$/, '');
+
   g.userData.fit = { box: full.clone(), pitch: (c.pitch || 0) * Math.PI / 180, path };
 }
 
@@ -1458,6 +1479,7 @@ async function showCharacter(key){
     loadTipEl.classList.remove('show');
     SFX.appear();
     revealShowUI(c);
+    grimeBegin(key);
     return;
   }
 
@@ -1521,6 +1543,9 @@ async function showCharacter(key){
     R3.path = pcfg ? { cfg: pcfg, s, pitch, t: 0, yaw: null,
                        shadowY: baseY - ps.y * s * 0.52 + 0.001 } : null;
 
+    const rn = gltf.userData.rootName;
+    R3.rootBone = rn ? obj.getObjectByName(rn) : null;
+
     if(gltf.animations && gltf.animations.length){
       R3.mixer = new THREE.AnimationMixer(obj);
       const act = R3.mixer.clipAction(gltf.animations[0]);
@@ -1547,6 +1572,9 @@ async function showCharacter(key){
 
   revealShowUI(c);
   fitShowAboveUI();
+  /* 工作面先蒙一层灰，它干活时一路擦干净。
+     有 WebGL 就贴在 3D 工作面上（擦痕跟着地面透视走），没有就用 2D 蒙版。 */
+  if(!buildDirt(key)) grimeBegin(key);
 }
 
 /* 把角色抬到台词上方。底部 UI 的像素高度基本固定，角色却是按画面比例
@@ -1601,6 +1629,9 @@ function hideShow(){
   showingKey = null;
   document.body.classList.remove('showing');
   showEl.classList.add('hide');
+  grimeClear();
+  clearDirt();
+  R3.rootBone = null;
   R3.flatImg = null;
   R3.path = null;
   R3.mover = null;
@@ -1616,6 +1647,7 @@ function syncShow(dt){
   if(R3.mixer) R3.mixer.update(dt);
   if(R3.flat) R3.flatT += dt;
   if(R3.path) updatePathMotion(dt);
+  if(R3.dirt) updateDirt(dt); else grimeUpdate();
 }
 
 /* 没有 WebGL 时的角色：2D 立绘踩着拍子上下弹、左右轻摆，做出"在干活"的动态。
@@ -1962,13 +1994,509 @@ function updatePersonLayer(now){
   paintPerson(g, cw, ch);
 }
 
+/* =========================================================================
+   8b. 脏污 → 擦干净
+   伙伴的工作面上先蒙一层灰（灰色污渍 + 擦痕 + 细点），它干活时一路擦过去，
+   走过的地方被擦掉。脏污层在实景画布之上、3D 角色之下，所以是被"擦"出来的。
+   ========================================================================= */
+const GRIME = { cv:null, g:null, on:false, key:null, zone:null, dpr:1, wiped:0 };
+
+function grimeClear(){
+  GRIME.on = false;
+  GRIME.key = null;
+  GRIME.zone = null;
+  if(!GRIME.cv) return;
+  GRIME.cv.classList.remove('on');
+  const g = GRIME.g;
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.clearRect(0, 0, GRIME.cv.width, GRIME.cv.height);
+}
+
+/* 角色当前在屏幕上的包围盒（像素）。3D 用模型外壳投影，2D 用立绘落点。 */
+function showScreenBox(){
+  if(R3.flat || !R3.fit || !R3.spin || !R3.spin.children.length || !R3.camera) return null;
+  const obj = R3.spin.children[0];
+  const box = R3.fit.box;
+  if(!box || !isFinite(box.min.x)) return null;
+  obj.updateWorldMatrix(true, false);
+  const M = obj.matrixWorld;
+  const v = new THREE.Vector3();
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for(const X of [box.min.x, box.max.x])
+  for(const Y of [box.min.y, box.max.y])
+  for(const Z of [box.min.z, box.max.z]){
+    v.set(X, Y, Z).applyMatrix4(M).project(R3.camera);
+    const sx = (v.x * 0.5 + 0.5) * W, sy = (-v.y * 0.5 + 0.5) * H;
+    if(sx < x0) x0 = sx; if(sx > x1) x1 = sx;
+    if(sy < y0) y0 = sy; if(sy > y1) y1 = sy;
+  }
+  if(!isFinite(x0) || x1 < x0) return null;
+  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: x1 - x0, h: y1 - y0 };
+}
+
+/* 每块工作面的脏污范围。水平面（地板/桌子）压扁成椭圆，垂直面（玻璃）基本是圆的。 */
+function grimeZoneFor(key){
+  const c = CHARS[key];
+  let b = null;
+  if(R3.flat){
+    const img = R3.flatImg;
+    const hh = H * 0.38;
+    const ww = hh * ((img && img.naturalWidth) ? img.naturalWidth / img.naturalHeight : 1.26);
+    b = { cx: W / 2, cy: H * 0.60 - hh * 0.42, w: ww, h: hh };
+  } else {
+    b = showScreenBox();
+  }
+  if(!b) return null;
+  const vertical = c.plane === '垂直平面';
+  // 包围盒里含了整圈轨迹，直接按它铺会糊满屏，收一档并夹在画面内
+  const rx = clamp(b.w * 0.88, W * 0.26, W * 0.58);
+  const ry = rx * (vertical ? 0.95 : 0.32);
+  return { cx: clamp(b.cx, rx * 0.55, W - rx * 0.55), cy: b.cy + b.h * 0.04, rx, ry };
+}
+
+/* 脏污的绘制：一层薄灰 + 大块斑 + 抹痕 + 砂砾点，最后用径向遮罩把边缘化开。 */
+function drawDirt(g, z){
+  const { cx, cy, rx, ry } = z;
+  const rand = (a, b) => a + Math.random() * (b - a);
+  g.save();
+  g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.clip();
+
+  // ① 底色：一层很淡的灰，先把这块面"压旧"
+  g.fillStyle = 'rgba(124,116,101,.13)';
+  g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+
+  // ② 大块斑：深浅两色交叠，别让灰面太平
+  for(let i = 0; i < 26; i++){
+    const a = rand(0, Math.PI * 2), r = Math.sqrt(Math.random()) * 0.92;
+    const x = cx + Math.cos(a) * rx * r, y = cy + Math.sin(a) * ry * r;
+    const rad = rand(0.16, 0.40) * rx;
+    const dark = Math.random() < 0.45;
+    const rg = g.createRadialGradient(x, y, 0, x, y, rad);
+    rg.addColorStop(0, dark ? 'rgba(86,78,64,.13)' : 'rgba(163,157,144,.11)');
+    rg.addColorStop(1, dark ? 'rgba(86,78,64,0)'   : 'rgba(163,157,144,0)');
+    g.fillStyle = rg;
+    g.beginPath();
+    g.ellipse(x, y, rad, rad * (ry / rx) * 1.6, 0, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  // ③ 抹痕：一道一道的短灰条，像之前有人抹过一遍没抹干净
+  g.lineCap = 'round';
+  for(let i = 0; i < 54; i++){
+    const y = cy + rand(-0.85, 0.85) * ry;
+    const x = cx + rand(-0.9, 0.9) * rx;
+    const len = rand(0.05, 0.22) * rx;
+    g.strokeStyle = 'rgba(92,84,72,' + rand(0.04, 0.11).toFixed(3) + ')';
+    g.lineWidth = Math.max(0.8, rand(1, 1 + ry * 0.045));
+    g.beginPath();
+    g.moveTo(x - len / 2, y);
+    g.lineTo(x + len / 2, y + rand(-0.06, 0.06) * ry);
+    g.stroke();
+  }
+
+  // ④ 砂砾：细点最能把"脏"讲清楚
+  for(let i = 0; i < 320; i++){
+    const a = rand(0, Math.PI * 2), r = Math.sqrt(Math.random());
+    const x = cx + Math.cos(a) * rx * r, y = cy + Math.sin(a) * ry * r;
+    g.fillStyle = 'rgba(70,63,53,' + rand(0.05, 0.16).toFixed(3) + ')';
+    const s = rand(0.5, 1.7);
+    g.beginPath(); g.ellipse(x, y, s, s * 0.85, 0, 0, Math.PI * 2); g.fill();
+  }
+  g.restore();
+
+  // ⑤ 边缘化开，别留一圈硬边
+  g.save();
+  g.globalCompositeOperation = 'destination-in';
+  const mask = g.createRadialGradient(cx, cy, 0, cx, cy, Math.max(rx, ry));
+  mask.addColorStop(0,    'rgba(0,0,0,1)');
+  mask.addColorStop(0.45, 'rgba(0,0,0,.95)');
+  mask.addColorStop(0.78, 'rgba(0,0,0,.55)');
+  mask.addColorStop(1,    'rgba(0,0,0,0)');
+  g.fillStyle = mask;
+  g.beginPath(); g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+
+/* 按当前范围整块重画（布局/旋屏后要重新量） */
+function grimeRepaint(){
+  if(!GRIME.on || !GRIME.zone) return;
+  const g = GRIME.g;
+  g.save();
+  g.setTransform(GRIME.dpr, 0, 0, GRIME.dpr, 0, 0);
+  g.globalCompositeOperation = 'source-over';
+  g.clearRect(0, 0, W, H);
+  drawDirt(g, GRIME.zone);
+  g.restore();
+}
+
+function grimeBegin(key){
+  if(!GRIME.cv){
+    GRIME.cv = $('grime');
+    if(!GRIME.cv) return;
+    GRIME.g = GRIME.cv.getContext('2d');
+  }
+  const z = grimeZoneFor(key);
+  if(!z){ grimeClear(); return; }
+
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const cv = GRIME.cv;
+  cv.width  = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  cv.style.width  = W + 'px';
+  cv.style.height = H + 'px';
+  GRIME.dpr = dpr;
+  GRIME.zone = z;
+  GRIME.key = key;
+  GRIME.on = true;
+  GRIME.wiped = 0;
+  GRIME.frames = 0;
+  grimeRepaint();
+  cv.classList.add('on');
+}
+
+/* 在 (x,y) 处擦一把。用 destination-out 擦掉脏污，露出下面的干净画面。 */
+function grimeWipe(x, y, rad, squash){
+  if(!GRIME.on) return;
+  const g = GRIME.g;
+  g.save();
+  g.globalCompositeOperation = 'destination-out';
+  const rg = g.createRadialGradient(x, y, 0, x, y, rad);
+  rg.addColorStop(0,    'rgba(0,0,0,1)');
+  rg.addColorStop(0.5,  'rgba(0,0,0,.9)');
+  rg.addColorStop(1,    'rgba(0,0,0,0)');
+  g.fillStyle = rg;
+  g.beginPath(); g.ellipse(x, y, rad, rad * squash, 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+
+/* 每帧跟着角色的位置擦。前几帧画面还没完全落定，顺手把范围重量一遍。 */
+function grimeUpdate(){
+  if(!GRIME.on || !GRIME.key) return;
+  if(GRIME.frames < 4){
+    GRIME.frames++;
+    const z = grimeZoneFor(GRIME.key);
+    if(z){ GRIME.zone = z; grimeRepaint(); }
+  }
+  const b = showScreenBox();
+  if(!b) return;
+  const vertical = CHARS[GRIME.key] && CHARS[GRIME.key].plane === '垂直平面';
+  const rad = clamp(b.w * 0.40, 26, W * 0.24);
+  grimeWipe(b.cx, b.cy + b.h * 0.08, rad, vertical ? 1.0 : 0.52);
+  GRIME.wiped++;
+}
+
+
+/* =========================================================================
+   8c. 3D 版脏污：一块贴在"工作面"上的平面，纹理被伙伴一路擦掉
+   地板/桌子是水平面（透视压扁），玻璃是竖在身后的竖直面。
+   脏污画在画布纹理上，用 destination-out 按角色的真实位置擦，
+   所以擦痕是留在地面上的印子，不是一个糊在屏幕上的灰团。
+   ========================================================================= */
+function paintDirtTexture(g, cw, ch){
+  const rand = (a, b) => a + Math.random() * (b - a);
+  g.clearRect(0, 0, cw, ch);
+
+  // ① 整面压一层薄灰
+  g.fillStyle = 'rgba(128,120,104,.40)';
+  g.fillRect(0, 0, cw, ch);
+
+  // ② 深一块浅一块的斑
+  for(let i = 0; i < 80; i++){
+    const x = rand(0, cw), y = rand(0, ch);
+    const rad = rand(0.04, 0.15) * cw;
+    const dark = Math.random() < 0.5;
+    const rg = g.createRadialGradient(x, y, 0, x, y, rad);
+    rg.addColorStop(0, dark ? 'rgba(78,70,56,.26)' : 'rgba(186,180,166,.30)');
+    rg.addColorStop(1, dark ? 'rgba(80,72,58,0)'   : 'rgba(170,164,150,0)');
+    g.fillStyle = rg;
+    g.beginPath(); g.ellipse(x, y, rad, rad * rand(0.45, 1), 0, 0, Math.PI * 2); g.fill();
+  }
+
+  // ③ 抹痕
+  g.lineCap = 'round';
+  for(let i = 0; i < 90; i++){
+    const x = rand(0, cw), y = rand(0, ch), len = rand(0.03, 0.14) * cw;
+    g.strokeStyle = 'rgba(88,80,68,' + rand(0.08, 0.20).toFixed(3) + ')';
+    g.lineWidth = Math.max(0.8, rand(1, cw * 0.006));
+    g.beginPath();
+    g.moveTo(x - len / 2, y);
+    g.lineTo(x + len / 2, y + rand(-0.02, 0.02) * ch);
+    g.stroke();
+  }
+
+  // ④ 砂砾
+  for(let i = 0; i < 900; i++){
+    const x = rand(0, cw), y = rand(0, ch);
+    g.fillStyle = 'rgba(64,57,47,' + rand(0.10, 0.30).toFixed(3) + ')';
+    const s = rand(0.5, 1.6);
+    g.beginPath(); g.ellipse(x, y, s, s * 0.85, 0, 0, Math.PI * 2); g.fill();
+  }
+
+  // ⑤ 四边淡出，免得看到平面边界
+  g.save();
+  g.globalCompositeOperation = 'destination-in';
+  const m = g.createRadialGradient(cw / 2, ch / 2, 0, cw / 2, ch / 2, Math.max(cw, ch) * 0.62);
+  m.addColorStop(0,   'rgba(0,0,0,1)');
+  m.addColorStop(0.55,'rgba(0,0,0,1)');
+  m.addColorStop(1,   'rgba(0,0,0,0)');
+  g.fillStyle = m;
+  g.fillRect(0, 0, cw, ch);
+  g.restore();
+}
+
+function clearDirt(){
+  const D = R3.dirt;
+  if(!D) return;
+  if(D.mesh && D.mesh.parent) D.mesh.parent.remove(D.mesh);
+  if(D.mesh){
+    D.mesh.geometry.dispose();
+    if(D.mesh.material){ if(D.mesh.material.map) D.mesh.material.map.dispose(); D.mesh.material.dispose(); }
+  }
+  R3.dirt = null;
+}
+
+/* 造一块脏污平面。挂在 pivot 上 —— 跟着俯视角一起转，
+   于是"地板/桌面"的倾斜和角色是完全一致的（正对相机的那块假地面）。
+   不挂在 mover/spin 上：桌子地面不该跟着角色一起走、一起转。
+   返回 false 表示这台设备用不了（走 2D 兜底）。 */
+function buildDirt(key){
+  clearDirt();
+  if(!R3.ok || R3.flat || !R3.pivot || !R3.fit) return false;
+  const c = CHARS[key];
+  const vertical = c.plane === '垂直平面';
+  const box = R3.fit.box, s = R3.fit.s;
+  if(!box || !isFinite(box.min.x) || s <= 0) return false;
+
+  const cx = (box.max.x + box.min.x) / 2;
+  const cy = (box.max.y + box.min.y) / 2;
+  const cz = (box.max.z + box.min.z) / 2;
+  const spanZ = Math.max(box.max.z - box.min.z, 1e-3);
+
+  /* 尺寸按"画面"给，不按角色体块给 —— 一眼要看出是"这一片地面/这扇玻璃脏"，
+     只糊住角色屁股底下那一小块就太小气了。
+     注意 pivot/mover 都不带缩放（缩放在 obj 自己身上），所以这里就是世界尺寸。 */
+  const pw = vertical ? R3.visW * 0.92 : R3.visW * 1.15;
+  const ph = vertical ? R3.visH * 0.66 : R3.visH * 0.54;
+  const cw = 720, ch = Math.max(200, Math.round(cw * ph / pw));
+  const cv = document.createElement('canvas');
+  cv.width = cw; cv.height = ch;
+  const g = cv.getContext('2d');
+  paintDirtTexture(g, cw, ch);
+
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), mat);
+  mesh.renderOrder = -2;
+
+  if(vertical){
+    // 脏玻璃：竖在角色身后，朝镜头
+    mesh.position.set(cx, cy, box.min.z - Math.max(spanZ * 0.12, 0.006));
+  } else {
+    // 脏地面 / 脏桌面：平铺在动作面上
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(cx, box.min.y + 0.002, cz);
+  }
+  R3.pivot.add(mesh);
+
+  // 擦除半径：按角色体块宽度换算成纹理像素（模型空间，除 pw 分母一致）
+  const bodyW = Math.max(box.max.x - box.min.x, spanZ) * 0.30;
+  R3.dirt = {
+    mesh, tex, cv, g, cw, ch, vertical,
+    cx, cy, cz, pw, ph,
+    radiusPx: clamp(bodyW / pw * cw, cw * 0.045, cw * 0.13),
+    acc: 0, wipes: 0,
+  };
+  return true;
+}
+
+/* 每帧在角色脚下擦一把（20fps 就够，纹理上传别太勤） */
+function updateDirt(dt){
+  const D = R3.dirt;
+  if(!D || !R3.pivot) return;
+  D.acc += dt;
+  if(D.acc < 0.05) return;
+  D.acc = 0;
+
+  const v = new THREE.Vector3();
+  const bone = R3.rootBone;
+  if(bone) bone.getWorldPosition(v);
+  else if(R3.mover) R3.mover.getWorldPosition(v);
+  else return;
+  R3.pivot.worldToLocal(v);              // 世界坐标 → 模型空间（含俯视旋转）
+
+  const u = (v.x - (D.cx - D.pw / 2)) / D.pw * D.cw;
+  const w = D.vertical
+    ? ((D.cy + D.ph / 2) - v.y) / D.ph * D.ch
+    : (v.z - (D.cz - D.ph / 2)) / D.ph * D.ch;
+  if(u < -D.cw * 0.3 || u > D.cw * 1.3 || w < -D.ch * 0.3 || w > D.ch * 1.3) return;
+
+  const g = D.g;
+  const r = D.radiusPx;
+  g.save();
+  g.globalCompositeOperation = 'destination-out';
+  const rg = g.createRadialGradient(u, w, 0, u, w, r);
+  rg.addColorStop(0,   'rgba(0,0,0,1)');
+  rg.addColorStop(0.5, 'rgba(0,0,0,.92)');
+  rg.addColorStop(1,   'rgba(0,0,0,0)');
+  g.fillStyle = rg;
+  g.beginPath(); g.ellipse(u, w, r, r * (D.vertical ? 1 : 0.88), 0, 0, Math.PI * 2); g.fill();
+  g.restore();
+
+  D.tex.needsUpdate = true;
+  D.wipes++;
+}
+
 let shotDataUrl = '';
-let placedStickers = [];        // { key, el, x, y, w, h, z }  x/y = 左上角(CSS px)
+let placedStickers = [];        // { key, el, cv, x, y, w, h, z }  x/y = 左上角(CSS px)
 let stickerSeq = 0;
 let selSticker = null;          // 当前选中的贴纸（调前后遮挡用）
 
 /* 伙伴贴纸默认尺寸（CSS px，占画面宽比例） */
 const STICKER_W = () => Math.round(Math.min(W, H) * 0.28);
+
+/* =========================================================================
+   9b. 3D 贴纸：拖出来的伙伴是立体模型，不是平面立绘
+   characters/static/*.glb 是三个 IP 的静态模型（原始 FBX 抽面后导出，
+   高度归一到 1、原点在体块中心）。这里用一块共享的离屏 WebGL 画布
+   逐个渲染，再各自贴回自己那张 2D 画布 —— 拖动、缩放、图层、成片
+   全都还是原来那套逻辑，只是"图"变成了会转的立体像。
+   ========================================================================= */
+const S3D = {
+  ok:false, cv:null, renderer:null, scene:null, camera:null,
+  models:{}, pending:{}, t:0, acc:0,
+  live:512, shot:1024,
+};
+
+function initS3D(){
+  if(S3D.ok) return true;
+  if(!window.THREE || !window.GLTFLoader) return false;
+  if(!webglSupported()) return false;
+  try{
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = S3D.live;
+    const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    r.setClearColor(0x000000, 0);
+    r.setPixelRatio(1);
+    r.setSize(S3D.live, S3D.live, false);
+
+    S3D.renderer = r;
+    S3D.cv = cv;
+    S3D.scene = new THREE.Scene();
+    S3D.scene.add(new THREE.AmbientLight(0xffffff, 1.15));
+    const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(1.6, 2.8, 4.4); S3D.scene.add(key);
+    const rim = new THREE.DirectionalLight(0xffffff, 1.0); rim.position.set(-2.2, 1.0, -2.4); S3D.scene.add(rim);
+    const fill = new THREE.DirectionalLight(0xffffff, 0.55); fill.position.set(0.4, -2.2, 2.4); S3D.scene.add(fill);
+
+    S3D.camera = new THREE.PerspectiveCamera(30, 1, 0.1, 100);
+    S3D.camera.position.set(0, 0, 4);
+    S3D.ok = true;
+  }catch(e){ S3D.ok = false; }
+  return S3D.ok;
+}
+
+function loadStatic(key){
+  if(S3D.models[key]) return Promise.resolve(S3D.models[key]);
+  if(S3D.pending[key]) return S3D.pending[key];
+  const c = CHARS[key];
+  S3D.pending[key] = new Promise((resolve, reject) => {
+    if(!c || !c.static || !window.GLTFLoader){ reject(new Error('没有静态模型')); return; }
+    new window.GLTFLoader().load(c.static + Q, g => {
+      const obj = g.scene;
+      obj.traverse(o => {
+        if(o.isMesh){
+          o.frustumCulled = false;
+          const ms = Array.isArray(o.material) ? o.material : [o.material];
+          ms.forEach(mt => { if(mt){ mt.roughness = Math.min(mt.roughness == null ? 0.5 : mt.roughness, 0.55); mt.needsUpdate = true; } });
+        }
+      });
+      const box = new THREE.Box3().setFromObject(obj);
+      const size = new THREE.Vector3(); box.getSize(size);
+      c._ar = size.x / Math.max(size.y, 1e-6);      // 轮廓长宽比：贴纸盒子照它摆
+      S3D.models[key] = { obj, size };
+      resolve(S3D.models[key]);
+    }, undefined, e => { S3D.pending[key] = null; reject(e); });
+  });
+  return S3D.pending[key];
+}
+
+/* 把某个贴纸的模型渲染到共享画布上（返回 false = 模型还没好） */
+function renderStickerModel(s, size){
+  const m = S3D.models[s.key];
+  if(!m || !S3D.ok) return false;
+  const cam = S3D.camera;
+  const asp = s.w / Math.max(s.h, 1);
+  cam.aspect = asp;
+  cam.updateProjectionMatrix();
+
+  const tanV = Math.tan(cam.fov * Math.PI / 360);
+  const needY = m.size.y * 1.03, needX = m.size.x * 1.03;
+  const d = Math.max(needY / (2 * tanV), needX / (2 * tanV * asp));
+  cam.position.set(0, 0, d);
+  cam.lookAt(0, 0, 0);
+
+  // 轻微呼吸 + 侧转，看着像手里捏着它在转
+  const yaw  = (s.yaw0 || 0) + (s.sway || 0) + (s.dragYaw || 0);
+  const tilt = (s.tilt || 0);
+  m.obj.rotation.set(tilt, yaw, 0);
+  m.obj.position.y = Math.sin((S3D.t + (s.ph || 0)) * 1.5) * 0.010;
+
+  if(S3D.cv.width !== size){
+    S3D.cv.width = S3D.cv.height = size;
+    S3D.renderer.setSize(size, size, false);
+  }
+  S3D.scene.add(m.obj);
+  S3D.renderer.render(S3D.scene, cam);
+  S3D.scene.remove(m.obj);
+  return true;
+}
+
+/* 单独重画一张贴纸画布 */
+function paintSticker(s){
+  if(!s.cv) return;
+  const g = s.cv.getContext('2d');
+  g.clearRect(0, 0, s.cv.width, s.cv.height);
+  if(!renderStickerModel(s, S3D.live)) return;
+  g.drawImage(S3D.cv, 0, 0, s.cv.width, s.cv.height);
+}
+
+/* 模型到位后把贴纸从平面立绘换成 3D，盒子比例顺手按模型轮廓修一下 */
+function ensureSticker3D(s){
+  if(!initS3D()) return;                       // 没有 WebGL：保持平面立绘
+  loadStatic(s.key).then(() => {
+    if(!s.el || !s.el.parentNode) return;
+    s.ready = true;
+    s.cv.style.display = 'block';
+    const im = s.el.querySelector('img');
+    if(im) im.style.display = 'none';
+
+    const ar = CHARS[s.key]._ar;
+    if(ar && Math.abs(s.w / s.h - ar) > 0.06){
+      const nh = Math.round(s.w / ar);
+      s.y += (s.h - nh) / 2;
+      s.h = nh;
+      applyStickerPos(s.el, s);
+    }
+    s.yaw0 = -0.30;
+    paintSticker(s);
+  }).catch(() => { /* 静默退回立绘 */ });
+}
+
+/* 拍照页每帧推进：~20fps 就够，别和相机/人物分割抢资源 */
+function updateSticker3D(dt){
+  if(!S3D.ok || G.state !== 'capture') return;
+  S3D.acc += dt;
+  if(S3D.acc < 0.05) return;
+  S3D.t += S3D.acc;
+  S3D.acc = 0;
+  for(const s of placedStickers){
+    if(!s.ready || !s.cv) continue;
+    s.sway = 0.26 * Math.sin(S3D.t * 0.8 + (s.ph || 0));
+    paintSticker(s);
+  }
+}
+
 
 /* 清空所有已摆放贴纸 */
 function clearStickers(){
@@ -2065,11 +2593,19 @@ function onStickerSrcDown(e, key){
   const c = CHARS[key];
   const w = STICKER_W();
   const img = CHAR_IMG(key);
-  const rect = img.naturalWidth ? (img.naturalWidth / Math.max(img.naturalHeight,1)) : 1;
+  const rect = c._ar || (img.naturalWidth ? (img.naturalWidth / Math.max(img.naturalHeight, 1)) : 1.26);
   const h = Math.round(w / Math.max(rect, 0.3));
   const el = document.createElement('div');
   el.className = 'sticker dragging';
   el.innerHTML = '<img src="' + c.img + Q + '" alt="' + c.name + '">';
+  // 3D 版：先挂一张空画布，模型到位后把立绘换掉
+  let cv = null;
+  if(S3D.ok){
+    cv = document.createElement('canvas');
+    cv.width = cv.height = S3D.live;
+    cv.style.display = 'none';
+    el.appendChild(cv);
+  }
   el.style.width = w + 'px';
   el.style.height = h + 'px';
   stickerLayer.appendChild(el);
@@ -2097,13 +2633,16 @@ function onStickerSrcDown(e, key){
     const cx = r.left + r.width/2, cy = r.top + r.height/2;
     const inLayer = cx >= layerRect.left && cx <= layerRect.right && cy >= layerRect.top && cy <= layerRect.bottom;
     if(inLayer && !overTrash(ev.clientX, ev.clientY)){
-      const s = { key, el, x: r.left - layerRect.left, y: r.top - layerRect.top, w: r.width, h: r.height, z: ++stickerSeq };
+      const s = { key, el, cv, ready: false, ph: Math.random() * 6.28, yaw0: -0.30,
+                  x: r.left - layerRect.left, y: r.top - layerRect.top,
+                  w: r.width, h: r.height, z: ++stickerSeq };
       el.style.left = s.x + 'px';
       el.style.top  = s.y + 'px';
       el.style.transform = '';
       bindStickerDrag(el, s);
       placedStickers.push(s);
       applyStickerZ();
+      ensureSticker3D(s);
     } else {
       if(el.parentNode) el.parentNode.removeChild(el);
     }
@@ -2176,6 +2715,12 @@ function bindStickerDrag(el, s){
       s.x = clamp(s.x, -s.w*0.5, stickerLayer.offsetWidth  - s.w*0.5);
       s.y = clamp(s.y, -s.w*0.5, stickerLayer.offsetHeight - s.h*0.5);
       applyStickerPos(el, s);
+      /* 3D 贴纸跟着手的走向转一点：左右拖是侧转、上下拖是低头抬头，
+         松手弹回去。让它看起来是个立体玩意儿，不是一张纸。 */
+      if(s.ready){
+        s.dragYaw = clamp((p.x - dragBase.px) * 0.0045, -0.65, 0.65);
+        s.tilt    = clamp(-(p.y - dragBase.py) * 0.0022, -0.30, 0.30);
+      }
       // 拖到右上角垃圾桶上方：高亮提示
       hitTrash = overTrash(e.clientX, e.clientY);
       capTrashEl.classList.toggle('hot', hitTrash);
@@ -2206,6 +2751,7 @@ function bindStickerDrag(el, s){
       el.style.zIndex = '';
       capTrashEl.classList.remove('hot');
       dragBase = null; pinchBase = null;
+      s.dragYaw = 0; s.tilt = 0;                          // 3D 姿态弹回正面
       if(dropOnTrash){
         const nm = CHARS[s.key].name;
         removeSticker(s);                                  // 丢进垃圾桶：删掉
@@ -2254,6 +2800,13 @@ async function openCapture(opts){
 
   SEG.lastT = 0;
   ensureSeg();          // 后台起人像分割（首次约 1~2 秒）；没好之前贴纸一律在最前面
+
+  /* 3D 贴纸：先把渲染器和三个静态模型在后台热起来，
+     等用户真的把伙伴拖出来时已经就绪，不会卡一下变平面 */
+  if(initS3D()){
+    const want = (capKeys && capKeys.length) ? capKeys : ORDER;
+    want.forEach(k => loadStatic(k).catch(() => {}));
+  }
 
   if(!camStream){
     await openCam(camFacing);
@@ -2327,10 +2880,15 @@ function shoot(){
   items.forEach(it => {
     if(it.person){ paintPerson(g, OUT_W, OUT_H); return; }
     const s = it.s;
+    const dw = s.w * sc, dh = s.h * sc;
+    /* 3D 贴纸：按成片分辨率重渲一遍再贴。屏幕上那张是 512²，
+       直接放大到成片会发虚，所以这里单独渲一张 1024² 的。 */
+    if(s.ready && S3D.ok && renderStickerModel(s, S3D.shot)){
+      g.drawImage(S3D.cv, 0, 0, S3D.cv.width, S3D.cv.height, s.x * sc, s.y * sc, dw, dh);
+      return;
+    }
     const img = CHAR_IMG(s.key);
     if(!img || !img.naturalWidth) return;
-    const dw = s.w * sc;
-    const dh = (s.h != null) ? s.h * sc : dw * (img.naturalHeight / img.naturalWidth);
     g.drawImage(img, s.x * sc, s.y * sc, dw, dh);
   });
 
@@ -2393,7 +2951,7 @@ function loop(ts){
 
   if(G.state === 'scan') updateScan(dt);
   if(G.state === 'show') syncShow(dt);
-  if(G.state === 'capture') updatePersonLayer(ts);
+  if(G.state === 'capture'){ updatePersonLayer(ts); updateSticker3D(dt); }
 
   /* 摄像头自愈 */
   if(camStream && (camEl.paused || !camEl.videoWidth) && G.state !== 'capture' && ts > camHealAt){
@@ -2471,9 +3029,10 @@ if(/[?&]demo=1/.test(location.search || '')){
 }
 
 window.__WORK = {
-  G, CONFIG, CHARS, ORDER, SCAN, R3, SEG,
+  G, CONFIG, CHARS, ORDER, SCAN, R3, SEG, S3D, GRIME,
   bootScan, analyzeShapes, onFound, showCharacter, showOver, openCapture,
   shoot, closeCapture, rectPathAt, applyStickerZ, PERSON_Z, hideShow,
+  grimeBegin, grimeZoneFor, showScreenBox, loadStatic, initS3D,
   get showingKey(){ return showingKey; },
   get placedStickers(){ return placedStickers; },
   get selSticker(){ return selSticker; },
