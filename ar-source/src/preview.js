@@ -3,6 +3,8 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { startBlowDetector } from './blow.js';
+import { createOpening } from './opening.js';
+import { applyCharacterMaterials } from './character-materials.js';
 
 const root = document.querySelector('#preview');
 const BASE_URL = import.meta.env.BASE_URL;
@@ -17,19 +19,19 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x07120d);
 scene.fog = new THREE.Fog(0x07120d, 4, 10);
 const camera = new THREE.PerspectiveCamera(36, window.innerWidth / window.innerHeight, 0.01, 50);
-camera.position.set(0, 0.88, 3.1);
+camera.position.set(0, 0.74, 3.0);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0, 0.58, 0);
+controls.target.set(0, 0.40, 0);
 controls.enableDamping = true;
 controls.minDistance = 1.5;
 controls.maxDistance = 5;
 controls.maxPolarAngle = Math.PI * 0.49;
 
-scene.add(new THREE.HemisphereLight(0xd9ffe7, 0x15231b, 2));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x252525, 2));
 const keyLight = new THREE.DirectionalLight(0xffffff, 2.3);
 keyLight.position.set(-2, 3.5, 3);
 scene.add(keyLight);
-const fillLight = new THREE.PointLight(0x5df29a, 12, 6);
+const fillLight = new THREE.PointLight(0xffffff, 5, 6);
 fillLight.position.set(1.8, 1.5, 1.6);
 scene.add(fillLight);
 
@@ -56,6 +58,8 @@ const panelBorder = new THREE.LineSegments(
 );
 panelBorder.position.copy(targetPanel.position);
 scene.add(panelBorder);
+targetPanel.visible = false;
+panelBorder.visible = false;
 
 const characters = [
   { key: 'heart', model: `${BASE_URL}characters/models/ip_01_heart_static.fbx`, pat: `${BASE_URL}characters/animations/heart_pat.glb`, pull: `${BASE_URL}characters/animations/heart_pull.glb` },
@@ -69,8 +73,11 @@ const gltfLoader = new GLTFLoader();
 const TURN_SPEED_MAX = 0.00025;
 const TURN_RADIANS_PER_SCREEN_WIDTH = Math.PI * 4;
 const TURN_RETURN_DELAY_MS = 1500;
+let opening = null;
+const inspectTime = new URLSearchParams(location.search).get('openingTime');
 
 function prepareModel(model, name) {
+  applyCharacterMaterials(model);
   model.traverse((object) => {
     if (!object.isMesh) return;
     object.castShadow = true;
@@ -176,6 +183,7 @@ function characterScreenBounds(record) {
 }
 
 function hitCharacter(point, headOnly = false) {
+  if (opening?.active) return null;
   let nearest = null;
   let nearestDistance = Infinity;
   for (const record of records) {
@@ -228,6 +236,7 @@ document.querySelector('#photo-button')?.addEventListener('click', async () => {
   location.href = './game.html?from=ar&preview=1';
 });
 renderer.domElement.addEventListener('pointerdown', (event) => {
+  if (opening?.active) return;
   if (event.shiftKey || event.button !== 0 || !event.isPrimary) return;
   const bounds = renderer.domElement.getBoundingClientRect();
   dragStart = { x: (event.clientX - bounds.left) / bounds.width, y: (event.clientY - bounds.top) / bounds.height, at: performance.now() };
@@ -319,9 +328,40 @@ renderer.domElement.addEventListener('lostpointercapture', () => {
 renderer.domElement.addEventListener('pointercancel', () => { dragStart = null; previousDragPoint = null; patGesture = null; controls.enabled = true; });
 
 const clock = new THREE.Clock();
+const previewControls = document.querySelector('.controls');
+function startOpening() {
+  previewControls.hidden = true;
+  controls.enabled = false;
+  setGestureStatus('');
+  document.querySelector('.status').textContent = '精灵正在到来';
+  opening.start();
+  records.forEach(record => {
+    record.pose.userData.turnAngle = 0;
+    record.pose.userData.blowSpinVelocity = 0;
+  });
+}
+try {
+  opening = await createOpening({ parent: scene, records, spacing: span / 3, z: 0.3,
+    onComplete() {
+      previewControls.hidden = false;
+      controls.enabled = true;
+      document.querySelector('.status').textContent = '精灵已到来';
+      setGestureStatus('可在角色上滑动测试互动');
+    },
+  });
+  startOpening();
+  if (inspectTime !== null) opening.update(THREE.MathUtils.clamp(Number(inspectTime) || 0, 0, 8));
+} catch (error) {
+  setGestureStatus(`开场加载失败：${error.message}`);
+  console.error(error);
+}
+document.querySelector('#replay-button')?.addEventListener('click', () => {
+  if (opening && !records.some(record => record.busy)) startOpening();
+});
 function render() {
   const delta = Math.min(clock.getDelta(), 0.05);
   const time = clock.elapsedTime;
+  if (inspectTime === null) opening?.update(delta);
   for (const record of records) {
     const { pose } = record;
     if (pose.userData.blowSpinVelocity > 0.05) {
@@ -344,7 +384,7 @@ function render() {
     pose.rotation.y = pose.userData.turnAngle;
     if (record.activeVariant) record.activeVariant.mixer.update(delta);
   }
-  controls.update();
+  if (!opening?.active) controls.update();
   renderer.render(scene, camera);
   requestAnimationFrame(render);
 }

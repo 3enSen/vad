@@ -3,6 +3,8 @@ import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MindARThree } from 'mind-ar/dist/mindar-image-three.prod.js';
 import { startBlowDetector } from './blow.js';
+import { createOpening } from './opening.js';
+import { applyCharacterMaterials } from './character-materials.js';
 
 const BASE_URL = import.meta.env.BASE_URL;
 const TARGET_URL = `${BASE_URL}targets/school-logo.mind`;
@@ -54,6 +56,7 @@ function loadGltf(loader, url) {
 }
 
 function prepareCharacter(model, name, targetWidth) {
+  applyCharacterMaterials(model);
   model.traverse((object) => {
     if (!object.isMesh) return;
     object.castShadow = false;
@@ -98,6 +101,8 @@ export function createARSession({ container, ui }) {
   let stopped = false;
   let lastRenderAt = 0;
   let removeScreenGestures = null;
+  let opening = null;
+  let openingStarted = false;
 
   function makeCharacterRecord(baseModel, data, index, spacing, targetWidth, row) {
     const pose = new THREE.Group();
@@ -141,7 +146,7 @@ export function createARSession({ container, ui }) {
   }
 
   async function playCharacterAction(record, actionName, now) {
-    if (!targetVisible || record.busy || now - record.pose.userData.lastActionAt < ACTION_COOLDOWN_MS) return;
+    if (!targetVisible || opening?.active || record.busy || now - record.pose.userData.lastActionAt < ACTION_COOLDOWN_MS) return;
     record.busy = true;
     record.pose.userData.lastActionAt = now;
     try {
@@ -253,7 +258,7 @@ export function createARSession({ container, ui }) {
     };
 
     const onPointerDown = (event) => {
-      if (!targetVisible || stopped || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
+      if (!targetVisible || opening?.active || stopped || !event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) return;
       const point = pointFromEvent(event);
       if (!point) return;
       const now = performance.now();
@@ -367,7 +372,7 @@ export function createARSession({ container, ui }) {
     // Ask for optional microphone access from the same explicit Start AR action.
     // AR remains usable if the user denies microphone permission.
     blowDetectorTask = startBlowDetector((durationMs) => {
-      if (!targetVisible || stopped) return;
+      if (!targetVisible || opening?.active || stopped) return;
       for (const record of characters) {
         const turns = THREE.MathUtils.clamp(0.4 + (durationMs - 180) / 1400, 0.4, 1);
         record.pose.userData.blowSpinVelocity = turns * Math.PI * 2 * 5;
@@ -426,12 +431,19 @@ export function createARSession({ container, ui }) {
     const targetWidth = CHARACTER_SPAN / 3.18;
     const spacing = CHARACTER_SPAN / 3;
     characters = models.map((model, index) => makeCharacterRecord(model, CHARACTERS[index], index, spacing, targetWidth, row));
+    opening = await createOpening({ parent: row, records: characters, spacing,
+      onComplete() { if (targetVisible) ui.found(); },
+    });
 
     anchor.onTargetFound = () => {
       if (stopped) return;
       targetVisible = true;
       row.visible = true;
-      ui.found();
+      if (!openingStarted) {
+        openingStarted = true;
+        opening.start();
+      }
+      if (!opening.active) ui.found();
     };
     anchor.onTargetLost = () => {
       if (stopped) return;
@@ -447,6 +459,7 @@ export function createARSession({ container, ui }) {
       const time = now / 1000;
       const deltaSeconds = lastRenderAt ? Math.min((now - lastRenderAt) / 1000, 0.05) : 0;
       lastRenderAt = now;
+      if (targetVisible) opening?.update(deltaSeconds);
       for (const record of characters) {
         const { pose } = record;
         if (pose.userData.blowSpinVelocity > 0.05) {
@@ -482,6 +495,8 @@ export function createARSession({ container, ui }) {
     targetVisible = false;
     removeScreenGestures?.();
     removeScreenGestures = null;
+    opening?.dispose();
+    opening = null;
     if (blowDetector) await blowDetector.stop();
     blowDetector = null;
     if (mindar) {

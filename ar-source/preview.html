@@ -7,6 +7,7 @@
     <title>识别成功 · 交互预览</title>
     <style>
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
       html, body { width: 100%; height: 100%; margin: 0; }
       body { overflow: hidden; color: #eef8f1; background: #07120d; font-family: system-ui, sans-serif; }
       #preview { position: fixed; inset: 0; }
@@ -17,6 +18,9 @@
       button { min-height: 48px; border: 1px solid #ffffff28; border-radius: 999px; color: #f3fff6; background: #173526e8; font: 700 16px/1 system-ui, sans-serif; backdrop-filter: blur(12px); }
       #blow-test-button { min-height: 38px; color: #bfe8cb; background: #0c2118d9; font-size: 12px; font-weight: 500; }
       #gesture-status { position: fixed; left: 50%; bottom: calc(max(20px, env(safe-area-inset-bottom)) + 102px); z-index: 5; width: min(88vw, 420px); transform: translateX(-50%); color: #b8cabf; font-size: 11px; text-align: center; }
+      .controls { grid-template-columns: 1fr 1fr; }
+      #photo-button { grid-column: 1 / -1; min-height: 42px; }
+      #replay-button { min-height: 38px; font-size: 12px; font-weight: 500; }
     </style>
   </head>
   <body>
@@ -26,6 +30,7 @@
     <div class="controls">
       <button id="photo-button" type="button">去合影</button>
       <button id="blow-test-button" type="button">开启吹气互动</button>
+      <button id="replay-button" type="button">重播开场</button>
     </div>
     <script type="module" src="./src/preview.js"></script>
   </body>
