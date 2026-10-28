@@ -1533,11 +1533,10 @@ async function showCharacter(key){
     const baseY = R3.visH * (c.yFrac || -0.16);
     R3.group.position.set(0, baseY, 0);
 
-    // 接触影：贴在动作面的下方
-    const w = ps.x * s;
-    R3.shadow.scale.set(w * 0.62, 1, w * 0.42);
-    R3.shadow.position.set(0, baseY - ps.y * s * 0.52 + 0.001, 0);
-    R3.shadow.visible = true;
+    // 接触影不再画：俯视角下这块 1×0.32 的椭圆贴片会被压成一条横线，
+    // 看着像画面里多了一条奇怪的线（老师圈出来去掉的就是它）。
+    // 2D 兜底（立绘）模式下的影子保留 —— 平视时它还是正常的贴地影。
+    R3.shadow.visible = false;
 
     // 走轨迹的角色：参数交给主循环，每帧推进位置与朝向
     const pcfg = fit && fit.path;
@@ -1750,8 +1749,20 @@ function buildTip(){
 }
 
 /* 启动：一进来就是识别页 */
+let scanWipedOnce = false;   // 每次刷新页面后的第一次进扫描页，自动清一次进度
 async function bootScan(){
   G.state = 'scan';
+  /* 识别会把环境里的暗块/真实贴纸自动收进来，上次会话常常留下
+     "没找却显示已找到"的进度 —— 所以每次打开页面后第一次进扫描页，
+     先自动清空一次，从零开始找。同一次会话内再回来不清。 */
+  if(!scanWipedOnce){
+    scanWipedOnce = true;
+    if(ORDER.some(k => G.collected[k])){
+      ORDER.forEach(k => { G.collected[k] = false; });
+      saveStore();
+    }
+    G.idx = 0;
+  }
   // 目标对准第一个还没收集的角色（全齐了就停在最后一个，方便直接去拍）
   if(!allDone()){
     G.idx = Math.max(0, ORDER.findIndex(k => !G.collected[k]));
@@ -2380,6 +2391,12 @@ function updateDirt(dt){
   if(D.acc < 0.05) return;
   D.acc = 0;
 
+  /* 一圈擦净后（收尾窗口 dur*2.2 走完），整块平面直接收掉：
+     画布理论上已全透明，这里再兜一道，任何设备上都不会残出边。 */
+  if(R3.mixer && R3.clip && R3.mixer.time > R3.clip.duration * 2.3){
+    if(D.mesh.visible) D.mesh.visible = false;
+  }
+
   const v = new THREE.Vector3();
   const bone = R3.rootBone;
   if(bone) bone.getWorldPosition(v);
@@ -2518,11 +2535,14 @@ function renderStickerModel(s, size){
   cam.position.set(0, 0, d);
   cam.lookAt(0, 0, 0);
 
-  // 轻微呼吸 + 侧转，看着像手里捏着它在转
-  const yaw  = (s.yaw0 || 0) + (s.sway || 0) + (s.dragYaw || 0);
+  /* 只保留呼吸：整体轻微起伏 + 一点点上下浮动，朝向不再自己摆动
+     （老师不要左右晃）。三个伙伴都有，靠 s.ph 错开相位，各在各的节拍上。 */
+  const yaw  = (s.yaw0 || 0) + (s.dragYaw || 0);
   const tilt = (s.tilt || 0);
+  const br   = Math.sin((S3D.t + (s.ph || 0)) * 1.6);      // -1 ~ 1，约 3.9s 一轮
   m.obj.rotation.set(tilt, yaw, 0);
-  m.obj.position.y = Math.sin((S3D.t + (s.ph || 0)) * 1.5) * 0.010;
+  m.obj.scale.setScalar(1 + br * 0.015);
+  m.obj.position.y = br * 0.010;
 
   if(S3D.cv.width !== size){
     S3D.cv.width = S3D.cv.height = size;
@@ -2574,8 +2594,7 @@ function updateSticker3D(dt){
   S3D.acc = 0;
   for(const s of placedStickers){
     if(!s.ready || !s.cv) continue;
-    s.sway = 0.26 * Math.sin(S3D.t * 0.8 + (s.ph || 0));
-    paintSticker(s);
+    paintSticker(s);                                   // 只推进呼吸（见 renderStickerModel）
   }
 }
 
