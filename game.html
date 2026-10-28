@@ -656,21 +656,20 @@ const CHARS = {
   a: { key:'a', name:'aa', accent:'#FF7A45', img:'chars/a.png',
        glb:'characters/wipe/wipe_glass.glb',
        static:'characters/static/a.glb',
-       work:'擦玻璃', plane:'垂直平面', pitch:0, moveScale:0.32, yFrac:0.04,
+       work:'擦玻璃', plane:'垂直平面', pitch:0, moveScale:1, yFrac:0.04,
+       /* 原动画擦玻璃走的是「8 字」：一边上去、转身 180° 头朝下一边下来
+          （行程 611mm，横摆 256mm），路径必须跟原片一样大 —— frameH 是这块
+          整体（体块+整条路径）在画面高度里占的比例，放宽它路径才铺得开。 */
+       frameH:0.58,
        shape:'bubble', shapeName:'泡泡', cap:'擦玻璃，脑袋怎么晕晕的' },
   d: { key:'d', name:'dd', accent:'#FF8FAB', img:'chars/d.png',
        glb:'characters/wipe/wipe_table.glb',
        static:'characters/static/d.glb',
-       work:'擦桌子', plane:'水平面', pitch:90, moveScale:0.42, yFrac:-0.03,
-       /* 运动轨迹：不再用动画里自带的直线位移，改成自己沿长方形边线绕
-          （5cm × 6cm，模型单位是米 → ×0.01）。loop = 绕一圈的秒数，
-          corner = 转角圆角（cm），让它在四角是拐弯不是硬折。
-          yaw = 基准朝向（度）：原动作是绕圈擦的，锁掉根骨骼旋转后脸的
-          朝向是侧着的，转 120° 脸才基本正对镜头。**不要用 90**——90 时气球
-          那个尖角正好朝着镜头，被透视压成一个小疙瘩，看着像"缺了角"；
-          135 时尖角横过来了，侧影里是一整根肥肥的气球尾巴（实测最像原片）。
-          spin = 朝向跟随轨迹的比例，只跟一点点，多了会变成歪头。 */
-       path:{ w:5, h:6, loop:11, corner:1.4, yaw:135, spin:0.18 },
+       work:'擦桌子', plane:'水平面', pitch:90, moveScale:1, yFrac:-0.03,
+       /* 轨迹直接用原动画：dd 擦桌子的 rig 位移本来就是沿长方形边线绕
+          （260 × 156 mm，一圈 12s，四角转身是原动作自带的），之前自己算的
+          5×6cm 小矩形只有体块的 11%、圆角又占掉一半周长，看起来根本不是
+          长方形。moveScale=1 不压缩、不锁旋转，照原片走。 */
        shape:'balloon', shapeName:'气球', cap:'嘿咻嘿咻嘿咻' },
 };
 const ORDER = ['v', 'a', 'd'];
@@ -1510,7 +1509,9 @@ async function showCharacter(key){
 
     // 归一：按"俯过视角后的投影尺寸"算，保证整段动作都在画面里
     const ps = projSize(box, pitch);
-    let s = (R3.visH * 0.46) / Math.max(ps.y, 1e-6);
+    /* frameH：整段动作（体块+路径）占画面高度的比例。aa 的 8 字路径要铺开，
+       默认 0.46 装不下原片的路径幅度。 */
+    let s = (R3.visH * (c.frameH || 0.46)) / Math.max(ps.y, 1e-6);
     if(ps.x * s > R3.visW * 0.84) s = (R3.visW * 0.84) / ps.x;
     R3.fit = { box, center, s, pitch };     // 抬落点时要用（整段动作的外壳）
 
@@ -1548,9 +1549,22 @@ async function showCharacter(key){
 
     if(gltf.animations && gltf.animations.length){
       R3.mixer = new THREE.AnimationMixer(obj);
-      const act = R3.mixer.clipAction(gltf.animations[0]);
+      R3.clip  = gltf.animations[0];
+      const act = R3.mixer.clipAction(R3.clip);
       act.setLoop(THREE.LoopRepeat, Infinity);
       act.reset().play();
+    }
+
+    /* aa 的蚊香眼：一片贴着脸的曲面盘，大部分嵌在头里、螺旋棱露在外面。
+       蒙皮矩阵的设备级微小差异会让它比 Blender 里沉一点 —— 头面一挡，
+       盘面就被深度测吃掉，原脸的白色五官就露出来了。它显隐本来就是靠
+       骨骼缩放（0.0005 隐藏），所以可见时段直接关掉深度测试、最后画，
+       各家 GPU 上都跟原渲染一致。 */
+    const diz = obj.getObjectByName('蚊香眼');
+    if(diz && diz.material){
+      const dm = Array.isArray(diz.material) ? diz.material : [diz.material];
+      dm.forEach(m => { m.depthTest = false; m.depthWrite = false; });
+      diz.renderOrder = 30;
     }
   } else {
     // 2D 兜底：把立绘当 sprite 贴上去
@@ -1641,6 +1655,7 @@ function hideShow(){
   while(R3.group.children.length) R3.group.remove(R3.group.children[0]);
   R3.shadow.visible = false;
   R3.mixer = null;
+  R3.clip = null;
 }
 
 function syncShow(dt){
@@ -2302,13 +2317,59 @@ function buildDirt(key){
 
   // 擦除半径：按角色体块宽度换算成纹理像素（模型空间，除 pw 分母一致）
   const bodyW = Math.max(box.max.x - box.min.x, spanZ) * 0.30;
-  R3.dirt = {
+  const D = {
     mesh, tex, cv, g, cw, ch, vertical,
     cx, cy, cz, pw, ph,
     radiusPx: clamp(bodyW / pw * cw, cw * 0.045, cw * 0.13),
-    acc: 0, wipes: 0,
+    acc: 0, wipes: 0, pts: [], coverPx: 0,
   };
+
+  /* 老师的要求：擦一圈就要把整面擦干净，不是只擦出一条路。
+     做法：采样整条轨迹（模型空间 → 纹理 UV），每帧沿轨迹描一遍、
+     线宽随"本圈进度"从体块宽一路涨到"离轨迹最远的角落"，一圈末正好盖满全面。 */
+  if(R3.mixer && R3.clip && R3.rootBone){
+    const save = R3.mixer.time;
+    const v = new THREE.Vector3();
+    const N = 140;
+    for(let i = 0; i < N; i++){
+      R3.mixer.setTime(R3.clip.duration * i / N);
+      R3.rootBone.updateWorldMatrix(true, false);
+      R3.rootBone.getWorldPosition(v);
+      R3.pivot.worldToLocal(v);
+      D.pts.push(dirtUV(D, v));
+    }
+    R3.mixer.setTime(save);              // 采样完把动画时间放回去
+    if(D.pts.length > 8){
+      let cover = 0;
+      const GX = 40, GY = 26;
+      for(let ix = 0; ix <= GX; ix++) for(let iy = 0; iy <= GY; iy++){
+        const pv = new THREE.Vector3(
+          D.cx - D.pw / 2 + D.pw * ix / GX,
+          D.vertical ? D.cy - D.ph / 2 + D.ph * iy / GY : cy,
+          D.vertical ? cz : D.cz - D.ph / 2 + D.ph * iy / GY);
+        const q = dirtUV(D, pv);
+        let best = 1e9;
+        for(const pt of D.pts){
+          const dd = (pt[0] - q[0]) * (pt[0] - q[0]) + (pt[1] - q[1]) * (pt[1] - q[1]);
+          if(dd < best) best = dd;
+        }
+        cover = Math.max(cover, Math.sqrt(best));
+      }
+      D.coverPx = Math.min(cover * 1.04, Math.max(D.cw, D.ch));
+    }
+  }
+
+  R3.dirt = D;
   return true;
+}
+
+/* 模型空间一点 → 脏污纹理 UV */
+function dirtUV(D, v){
+  const u = (v.x - (D.cx - D.pw / 2)) / D.pw * D.cw;
+  const w = D.vertical
+    ? ((D.cy + D.ph / 2) - v.y) / D.ph * D.ch
+    : (v.z - (D.cz - D.ph / 2)) / D.ph * D.ch;
+  return [u, w];
 }
 
 /* 每帧在角色脚下擦一把（20fps 就够，纹理上传别太勤） */
@@ -2326,10 +2387,7 @@ function updateDirt(dt){
   else return;
   R3.pivot.worldToLocal(v);              // 世界坐标 → 模型空间（含俯视旋转）
 
-  const u = (v.x - (D.cx - D.pw / 2)) / D.pw * D.cw;
-  const w = D.vertical
-    ? ((D.cy + D.ph / 2) - v.y) / D.ph * D.ch
-    : (v.z - (D.cz - D.ph / 2)) / D.ph * D.ch;
+  const [u, w] = dirtUV(D, v);
   if(u < -D.cw * 0.3 || u > D.cw * 1.3 || w < -D.ch * 0.3 || w > D.ch * 1.3) return;
 
   const g = D.g;
@@ -2342,6 +2400,30 @@ function updateDirt(dt){
   rg.addColorStop(1,   'rgba(0,0,0,0)');
   g.fillStyle = rg;
   g.beginPath(); g.ellipse(u, w, r, r * (D.vertical ? 1 : 0.88), 0, 0, Math.PI * 2); g.fill();
+
+  /* 擦一圈全干净：沿整条轨迹描边，线宽随本圈进度从体块宽涨到最远角落，
+     一圈末正好盖满整个工作面。圈末再多描一会儿（宽度已到顶），
+     保证最远的角落也被盖到，之后全干净就不用再描。 */
+  if(D.pts.length > 8 && R3.mixer && R3.clip){
+    const dur = R3.clip.duration;
+    if(R3.mixer.time < dur * 2.2){
+      const p = Math.min(1, R3.mixer.time / dur);
+      /* lineWidth 是"单边半径"的两倍：最远角落离轨迹 coverPx，
+         线宽要涨到 2×coverPx 才能把整个工作面盖满 */
+      const wid = D.radiusPx * 0.9 + (D.coverPx * 2 - D.radiusPx * 0.9) * p;
+      if(wid > 2){
+        g.lineCap = 'round'; g.lineJoin = 'round';
+        const poly = () => {
+          g.beginPath();
+          g.moveTo(D.pts[0][0], D.pts[0][1]);
+          for(let i = 1; i < D.pts.length; i++) g.lineTo(D.pts[i][0], D.pts[i][1]);
+          g.stroke();
+        };
+        g.strokeStyle = 'rgba(0,0,0,.55)'; g.lineWidth = wid; poly();
+        g.strokeStyle = 'rgba(0,0,0,.9)';  g.lineWidth = wid * 0.72; poly();
+      }
+    }
+  }
   g.restore();
 
   D.tex.needsUpdate = true;
