@@ -2513,11 +2513,39 @@ function loadStatic(key){
       const box = new THREE.Box3().setFromObject(obj);
       const size = new THREE.Vector3(); box.getSize(size);
       c._ar = size.x / Math.max(size.y, 1e-6);      // 轮廓长宽比：贴纸盒子照它摆
-      S3D.models[key] = { obj, size };
+      S3D.models[key] = { obj, size, box };         // box 要留着：取景时按 8 个角点算，才不会被切
       resolve(S3D.models[key]);
     }, undefined, e => { S3D.pending[key] = null; reject(e); });
   });
   return S3D.pending[key];
+}
+
+/* 贴纸模型在当前姿态（tilt/yaw）+ 呼吸缩放下的相机空间范围：
+   半高、半宽、以及"最靠近镜头那一面"的深度。相机沿 +Z 看向 -Z，
+   所以 z 越大越靠前 —— 取景必须按最前面那一面留距离，才不会被切。 */
+const _ext = { e:null, m:null, v:null };
+function stickerExtent(m, tilt, yaw, k, py){
+  const b = m.box;
+  if(!b || !window.THREE){
+    return { halfH: m.size.y * 0.55, halfW: m.size.x * 0.55, zNear: m.size.z * 0.5 };
+  }
+  const T = window.THREE;
+  if(!_ext.e){ _ext.e = new T.Euler(); _ext.m = new T.Matrix4(); _ext.v = new T.Vector3(); }
+  _ext.e.set(tilt, yaw, 0);
+  _ext.m.makeRotationFromEuler(_ext.e);
+  let hH = 0, hW = 0, zN = -1e9;
+  const v = _ext.v;
+  for(const X of [b.min.x, b.max.x])
+  for(const Y of [b.min.y, b.max.y])
+  for(const Z of [b.min.z, b.max.z]){
+    v.set(X, Y, Z).applyMatrix4(_ext.m);
+    const y = v.y * k + py, x = v.x * k, z = v.z * k;
+    if(Math.abs(y) > hH) hH = Math.abs(y);
+    if(Math.abs(x) > hW) hW = Math.abs(x);
+    if(z > zN) zN = z;
+  }
+  const pad = 1.02;                 // 只留一丝边（抗锯齿用），别让模型白白缩小
+  return { halfH: hH * pad, halfW: hW * pad, zNear: zN };
 }
 
 /* 把某个贴纸的模型渲染到共享画布上（返回 false = 模型还没好） */
@@ -2529,20 +2557,28 @@ function renderStickerModel(s, size){
   cam.aspect = asp;
   cam.updateProjectionMatrix();
 
-  const tanV = Math.tan(cam.fov * Math.PI / 360);
-  const needY = m.size.y * 1.03, needX = m.size.x * 1.03;
-  const d = Math.max(needY / (2 * tanV), needX / (2 * tanV * asp));
-  cam.position.set(0, 0, d);
-  cam.lookAt(0, 0, 0);
-
   /* 只保留呼吸：整体轻微起伏 + 一点点上下浮动，朝向不再自己摆动
      （老师不要左右晃）。三个伙伴都有，靠 s.ph 错开相位，各在各的节拍上。 */
   const yaw  = (s.yaw0 || 0) + (s.dragYaw || 0);
   const tilt = (s.tilt || 0);
   const br   = Math.sin((S3D.t + (s.ph || 0)) * 1.6);      // -1 ~ 1，约 3.9s 一轮
   m.obj.rotation.set(tilt, yaw, 0);
-  m.obj.scale.setScalar(1 + br * 0.015);
-  m.obj.position.y = br * 0.010;
+  const k = 1 + br * 0.015;
+  m.obj.scale.setScalar(k);
+  const py = br * 0.010;
+  m.obj.position.y = py;
+
+  /* 取景：不能只按包围盒的宽高算 —— 手里的球球是伸在身前的，
+     离镜头更近、透视放大更多，按中心平面取景就会把它切掉一块
+     （老师反馈"球球被边挡住"）。
+     这里把包围盒 8 个角点按当前姿态转到相机空间，取真实的
+     上下/左右/前后范围，再按"最靠近镜头那一面"反推相机距离，
+     保证整只（包括伸出来的手）都完整落在画布里。 */
+  const tanV = Math.tan(cam.fov * Math.PI / 360);
+  const need = stickerExtent(m, tilt, yaw, k, py);
+  const d = need.zNear + Math.max(need.halfH / tanV, need.halfW / (tanV * asp));
+  cam.position.set(0, 0, d);
+  cam.lookAt(0, 0, 0);
 
   if(S3D.cv.width !== size){
     S3D.cv.width = S3D.cv.height = size;
@@ -2580,7 +2616,7 @@ function ensureSticker3D(s){
       s.h = nh;
       applyStickerPos(s.el, s);
     }
-    s.yaw0 = -0.30;
+    s.yaw0 = 0;                                  // 拖出来就正对镜头，不偏头
     paintSticker(s);
   }).catch(() => { /* 静默退回立绘 */ });
 }
@@ -2734,7 +2770,7 @@ function onStickerSrcDown(e, key){
     const cx = r.left + r.width/2, cy = r.top + r.height/2;
     const inLayer = cx >= layerRect.left && cx <= layerRect.right && cy >= layerRect.top && cy <= layerRect.bottom;
     if(inLayer && !overTrash(ev.clientX, ev.clientY)){
-      const s = { key, el, cv, ready: false, ph: Math.random() * 6.28, yaw0: -0.30,
+      const s = { key, el, cv, ready: false, ph: Math.random() * 6.28, yaw0: 0,
                   x: r.left - layerRect.left, y: r.top - layerRect.top,
                   w: r.width, h: r.height, z: ++stickerSeq };
       el.style.left = s.x + 'px';
