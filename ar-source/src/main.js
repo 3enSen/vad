@@ -1,5 +1,6 @@
 import './style.css';
 import { createARSession } from './ar.js';
+import { openPhotoFlow } from './photo-flow.js';
 
 const elements = {
   container: document.querySelector('#ar-container'),
@@ -170,8 +171,8 @@ elements.photo.addEventListener('click', async () => {
   busy = true;
   elements.photo.disabled = true;
   try {
-    if (session) await stopAR();
-      location.href = './game.html?from=ar';
+    if (session) await session.stop({ keepMusic: true });
+    openPhotoFlow();
   } finally {
     busy = false;
     elements.photo.disabled = false;

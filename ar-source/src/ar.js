@@ -31,7 +31,7 @@ const CHARACTERS = [
 ];
 // Characters intentionally extend slightly beyond the logo's width for a more
 // readable foreground presence while remaining anchored to the target.
-const CHARACTER_SPAN = 0.99;
+const CHARACTER_SPAN = 1.12;
 const FLOAT_AMPLITUDE = 0.012;
 const BREATH_AMPLITUDE = 0.025;
 const ACTION_COOLDOWN_MS = 750;
@@ -386,11 +386,13 @@ export function createARSession({ container, ui }) {
       if (stopped) void detector.stop();
       else {
         blowDetector = detector;
+        music.recover();
         ui.microphoneReady?.();
       }
     }).catch((error) => {
       console.info('[WebAR] Microphone blow interaction is unavailable; AR remains active.', error);
       ui.microphoneUnavailable?.(error);
+      music.recover();
     });
 
   }
@@ -453,13 +455,14 @@ export function createARSession({ container, ui }) {
 
     const row = new THREE.Group();
     row.name = 'image-target-ground-plane-characters';
-    row.position.set(0, -0.485, 0.06);
+    row.position.set(0, -0.55, 0.22);
     row.visible = false;
 
     const targetWidth = CHARACTER_SPAN / 3.18;
     const spacing = CHARACTER_SPAN / 3;
     characters = models.map((model, index) => makeCharacterRecord(model, CHARACTERS[index], index, spacing, targetWidth, row));
     opening = await createOpening({ parent: row, records: characters, spacing,
+      portalCenter: new THREE.Vector3(0, 0.55, -0.22),
       onComplete() { startMicrophone(); music.start(); if (targetVisible) ui.found(); },
     });
 
@@ -529,12 +532,12 @@ export function createARSession({ container, ui }) {
     });
   }
 
-  async function stop() {
-    if (stopped) return;
+  async function stop({ keepMusic = false } = {}) {
+    if (stopped) { if (!keepMusic) music.dispose(); return; }
     stopped = true;
     window.clearInterval(diagnosticTimer);
     if (videoFrameCallback !== undefined) mindar?.video?.cancelVideoFrameCallback?.(videoFrameCallback);
-    music.dispose();
+    if (!keepMusic) music.dispose();
     targetVisible = false;
     removeScreenGestures?.();
     removeScreenGestures = null;

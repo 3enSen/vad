@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { startBlowDetector } from './blow.js';
 import { createOpening } from './opening.js';
+import { openPhotoFlow } from './photo-flow.js';
 import { createBackgroundMusic } from './background-music.js';
 
 const music = createBackgroundMusic();
@@ -70,7 +71,8 @@ const characters = [
   { key: 'bubble', model: `${BASE_URL}characters/models/ip_02_bubble_static.fbx`, pat: `${BASE_URL}characters/animations/bubble_pat.glb`, pull: `${BASE_URL}characters/animations/bubble_pull.glb` },
   { key: 'leaf', model: `${BASE_URL}characters/models/ip_03_leaf_static.fbx`, pat: `${BASE_URL}characters/animations/leaf_pat.glb`, pull: `${BASE_URL}characters/animations/leaf_pull.glb` },
 ];
-const span = 0.88;
+const span = 0.995;
+let photoFlowActive = false;
 const characterWidth = span / 3.18;
 const fbxLoader = new FBXLoader();
 const gltfLoader = new GLTFLoader();
@@ -233,12 +235,15 @@ document.querySelector('#blow-test-button')?.addEventListener('click', async (ev
   } catch (error) {
     button.disabled = false;
     setGestureStatus(`麦克风不可用：${error.message}`);
+  } finally {
+    music.recover();
   }
 });
 window.addEventListener('pagehide', () => { void previewBlowDetector?.stop(); });
 document.querySelector('#photo-button')?.addEventListener('click', async () => {
   await previewBlowDetector?.stop();
-  location.href = './game.html?from=ar&preview=1';
+  photoFlowActive = true;
+  openPhotoFlow(true);
 });
 renderer.domElement.addEventListener('pointerdown', (event) => {
   if (opening?.active) return;
@@ -366,6 +371,7 @@ document.querySelector('#replay-button')?.addEventListener('click', () => {
   if (opening && !records.some(record => record.busy)) startOpening();
 });
 function render() {
+  if (photoFlowActive) return;
   const delta = Math.min(clock.getDelta(), 0.05);
   const time = clock.elapsedTime;
   if (inspectTime === null) opening?.update(delta);

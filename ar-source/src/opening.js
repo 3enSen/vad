@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { applyCharacterMaterials } from './character-materials.js';
 
 // Shared by the scan-free preview and the image-target AR scene.
-export async function createOpening({ parent, records, spacing, z = 0, onComplete }) {
+export async function createOpening({ parent, records, spacing, z = 0, portalCenter, onComplete }) {
   const gltf = await new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}characters/opening/spirit_portal_opening.glb`);
   applyCharacterMaterials(gltf.scene);
   const group = new THREE.Group();
@@ -24,6 +24,9 @@ export async function createOpening({ parent, records, spacing, z = 0, onComplet
   });
   remove.forEach(object => object.removeFromParent());
   const portal = gltf.scene.getObjectByName('PORTAL_ROOT');
+  if (portalCenter) {
+    group.position.copy(portalCenter).addScaledVector(portal.position, -scale);
+  }
   const halo = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.1), new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
@@ -59,8 +62,8 @@ export async function createOpening({ parent, records, spacing, z = 0, onComplet
     wrapper.add(object);
     return { wrapper, factor, offset: new THREE.Vector3(
       (index - 1) * spacing / scale - center.x * factor,
-      -bounds.min.y * factor,
-      0.95 - center.z * factor,
+      -group.position.y / scale - bounds.min.y * factor,
+      (z - group.position.z) / scale - center.z * factor,
     ) };
   });
   parent.add(group);
