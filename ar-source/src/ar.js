@@ -105,6 +105,10 @@ export function createARSession({ container, ui }) {
   let removeScreenGestures = null;
   let opening = null;
   let openingStarted = false;
+  let diagnosticTimer;
+  let cameraFrames = 0;
+  let processedFrames = 0;
+  let videoFrameCallback;
 
   function makeCharacterRecord(baseModel, data, index, spacing, targetWidth, row) {
     const pose = new THREE.Group();
@@ -366,27 +370,8 @@ export function createARSession({ container, ui }) {
     };
   }
 
-  async function start() {
-    music.unlock();
-    if (!window.isSecureContext && location.hostname !== 'localhost') {
-      throw new Error('摄像头需要 HTTPS 安全来源。');
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('此浏览器不支持摄像头访问。');
-    }
-
-    mindar = new MindARThree({
-      container,
-      imageTargetSrc: TARGET_URL,
-      maxTrack: 1,
-      filterMinCF: 0.001,
-      filterBeta: 0.01,
-      warmupTolerance: 5,
-      missTolerance: 5,
-    });
-
-    ui.loading?.('正在打开摄像头…');
-    await mindar.start();
+  function startMicrophone() {
+    if (blowDetectorTask || stopped) return;
     // Ask for optional microphone access from the same explicit Start AR action.
     // AR remains usable if the user denies microphone permission.
     blowDetectorTask = startBlowDetector((durationMs) => {
@@ -408,6 +393,45 @@ export function createARSession({ container, ui }) {
       ui.microphoneUnavailable?.(error);
     });
 
+  }
+
+  async function start() {
+    music.unlock();
+    if (!window.isSecureContext && location.hostname !== 'localhost') {
+      throw new Error('摄像头需要 HTTPS 安全来源。');
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('此浏览器不支持摄像头访问。');
+    }
+
+    mindar = new MindARThree({
+      container,
+      imageTargetSrc: TARGET_URL,
+      maxTrack: 1,
+      filterMinCF: 0.001,
+      filterBeta: 0.01,
+      warmupTolerance: 5,
+      missTolerance: 5,
+    });
+
+    ui.loading?.('正在打开摄像头…');
+    await mindar.start();
+    const originalUpdate = mindar.controller.onUpdate;
+    mindar.controller.onUpdate = event => {
+      if (event.type === 'processDone') processedFrames += 1;
+      originalUpdate?.(event);
+    };
+    const countFrame = () => {
+      if (stopped) return;
+      cameraFrames += 1;
+      videoFrameCallback = mindar.video.requestVideoFrameCallback(countFrame);
+    };
+    if (mindar.video.requestVideoFrameCallback) countFrame();
+    diagnosticTimer = window.setInterval(() => {
+      const video = mindar?.video;
+      const track = video?.srcObject?.getVideoTracks()[0];
+      ui.diagnostics?.(`画面 ${cameraFrames} / 识别 ${processedFrames}；${video?.videoWidth}×${video?.videoHeight}；${track?.muted ? '摄像头中断' : track?.readyState || '无视频'}${openingStarted ? '；已锁定' : ''}`);
+    }, 1000);
     ui.loading?.('正在加载精灵…');
     const fbxLoader = new FBXLoader();
     const models = await Promise.all(CHARACTERS.map((character) => loadFbx(fbxLoader, character.model)));
@@ -436,7 +460,7 @@ export function createARSession({ container, ui }) {
     const spacing = CHARACTER_SPAN / 3;
     characters = models.map((model, index) => makeCharacterRecord(model, CHARACTERS[index], index, spacing, targetWidth, row));
     opening = await createOpening({ parent: row, records: characters, spacing,
-      onComplete() { music.start(); if (targetVisible) ui.found(); },
+      onComplete() { startMicrophone(); music.start(); if (targetVisible) ui.found(); },
     });
 
     // Register only once the opening is ready: tracking is already running and
@@ -508,6 +532,8 @@ export function createARSession({ container, ui }) {
   async function stop() {
     if (stopped) return;
     stopped = true;
+    window.clearInterval(diagnosticTimer);
+    if (videoFrameCallback !== undefined) mindar?.video?.cancelVideoFrameCallback?.(videoFrameCallback);
     music.dispose();
     targetVisible = false;
     removeScreenGestures?.();

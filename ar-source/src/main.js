@@ -55,6 +55,7 @@ function explainError(error) {
 }
 
 const ui = {
+  diagnostics(text) { document.querySelector('#debug-frames').textContent = text; },
   loading(message) {
     elements.start.textContent = message;
   },
