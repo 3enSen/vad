@@ -321,7 +321,7 @@
     -webkit-tap-highlight-color:transparent;
   }
   .sticker.sel .rzHandle{display:grid}
-  .sticker .rzHandle svg{width:15px;height:15px;pointer-events:none}
+  .sticker .rzHandle svg{width:16px;height:16px;pointer-events:none}
   .sticker .rzHandle svg *{
     fill:none;stroke:currentColor;stroke-width:2.1;
     stroke-linecap:round;stroke-linejoin:round;
@@ -2762,11 +2762,15 @@ function onStickerSrcDown(e, key){
   }
   el.style.width = w + 'px';
   el.style.height = h + 'px';
-  // 右下角放大镜把手：不拖动也能看出来"这里可以放大缩小"
+  // 右下角旋转把手：拖它 = 放大缩小 + 转方向（转到正/直角会吸附）
   const hd = document.createElement('div');
   hd.className = 'rzHandle';
-  hd.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="10.4" cy="10.4" r="6.1"/>'
-               + '<path d="M15.1 15.1 20.2 20.2"/><path d="M10.4 7.6v5.6M7.6 10.4h5.6"/></svg>';
+  hd.innerHTML = '<svg viewBox="0 0 24 24">'
+               + '<path d="M20.6 12a8.6 8.6 0 0 0-8.6-8.6 8.9 8.9 0 0 0-6.4 2.6L3.4 7.9"/>'
+               + '<path d="M3.4 3.2v4.8h4.8"/>'
+               + '<path d="M3.4 12A8.6 8.6 0 0 0 12 20.6a8.9 8.9 0 0 0 6.4-2.6l2.2-2.1"/>'
+               + '<path d="M20.6 20.8v-4.8h-4.8"/>'
+               + '</svg>';
   el.appendChild(hd);
   stickerLayer.appendChild(el);
 
@@ -2793,7 +2797,7 @@ function onStickerSrcDown(e, key){
     const cx = r.left + r.width/2, cy = r.top + r.height/2;
     const inLayer = cx >= layerRect.left && cx <= layerRect.right && cy >= layerRect.top && cy <= layerRect.bottom;
     if(inLayer && !overTrash(ev.clientX, ev.clientY)){
-      const s = { key, el, cv, ready: false, ph: Math.random() * 6.28, yaw0: 0,
+      const s = { key, el, cv, ready: false, ph: Math.random() * 6.28, yaw0: 0, rot: 0,
                   x: r.left - layerRect.left, y: r.top - layerRect.top,
                   w: r.width, h: r.height, z: ++stickerSeq };
       el.style.left = s.x + 'px';
@@ -2824,12 +2828,13 @@ function moveAt(ev, el, w, h){
   el.style.top  = (ev.clientY - layerRect.top - h/2) + 'px';
 }
 
-/* 统一应用贴纸位置与尺寸 */
+/* 统一应用贴纸位置与尺寸（rot = 绕自身中心转的角度，单位度） */
 function applyStickerPos(el, s){
   el.style.left = s.x + 'px';
   el.style.top  = s.y + 'px';
   el.style.width  = s.w + 'px';
   el.style.height = s.h + 'px';
+  el.style.transform = s.rot ? 'rotate(' + s.rot.toFixed(1) + 'deg)' : '';
 }
 
 /* 已摆放的贴纸：单指拖动位置，双指缩放大小，
@@ -2938,8 +2943,18 @@ function bindStickerDrag(el, s){
   el.addEventListener('lostpointercapture', onUp);
 }
 
-/* 右下角放大镜把手：按住拖 = 等比缩放（左上角不动，和双指缩放同一套上下限）。
-   手势事件在把手上拦下来，否则会冒泡到贴纸本体、变成拖动位置。 */
+/* 转角吸附：接近 0 / 90 / 180 度时吸上去，正着的时候精确回到 0 */
+function snapRot(a){
+  let x = ((a + 180) % 360 + 360) % 360 - 180;      // 归一到 -180 ~ 180
+  for(const t of [-180, -90, 0, 90, 180]){
+    if(Math.abs(x - t) <= 7) return t;
+  }
+  return x;
+}
+
+/* 右下角旋转把手：按住拖，绕自身中心转 = 转角，离中心的远近 = 缩放，
+   转到正/直角附近自动吸附。手势事件在这里拦下来，
+   否则会冒泡到贴纸本体、变成拖动位置。 */
 function bindResizeHandle(handle, el, s){
   let base = null;
   handle.addEventListener('pointerdown', e => {
@@ -2948,7 +2963,16 @@ function bindResizeHandle(handle, el, s){
     e.preventDefault();
     e.stopPropagation();
     try{ handle.setPointerCapture(e.pointerId); }catch(_){}
-    base = { px: e.clientX, py: e.clientY, w0: s.w, h0: s.h };
+    /* 以贴纸中心为旋转/缩放的锚点：中心不动，转起来才不会"绕着角落飞" */
+    const r = el.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    base = {
+      cx, cy,
+      ang0:  Math.atan2(e.clientY - cy, e.clientX - cx) * 180 / Math.PI,
+      dist0: Math.max(28, Math.hypot(e.clientX - cx, e.clientY - cy)),
+      w0: s.w, h0: s.h, rot0: (s.rot || 0),
+      cxL: s.x + s.w / 2, cyL: s.y + s.h / 2,
+    };
     el.classList.add('dragging');
     el.style.zIndex = 20;
   });
@@ -2956,15 +2980,18 @@ function bindResizeHandle(handle, el, s){
     if(!base) return;
     e.preventDefault();
     e.stopPropagation();
+    const dx = e.clientX - base.cx, dy = e.clientY - base.cy;
     const maxW = Math.min(stickerLayer.offsetWidth, stickerLayer.offsetHeight) * 0.9;
-    /* 取位移里较大的那一维当缩放量，横着拖、竖着拖都能用 */
-    const dx = e.clientX - base.px, dy = e.clientY - base.py;
-    const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
-    const nw = clamp(base.w0 + delta, 44, maxW);
+    /* 远近 → 缩放（有上下限，手指离太近也不会突然缩没） */
+    const ratio = clamp(Math.hypot(dx, dy) / base.dist0, 0.30, 3.2);
+    const nw = clamp(base.w0 * ratio, 44, maxW);
     s.w = nw;
     s.h = nw * (base.h0 / base.w0);
-    s.x = clamp(s.x, -s.w * 0.5, Math.max(0, stickerLayer.offsetWidth  - s.w));
-    s.y = clamp(s.y, -s.w * 0.5, Math.max(0, stickerLayer.offsetHeight - s.h));
+    s.x = clamp(base.cxL - s.w / 2, -s.w / 2, stickerLayer.offsetWidth  - s.w / 2);
+    s.y = clamp(base.cyL - s.h / 2, -s.h / 2, stickerLayer.offsetHeight - s.h / 2);
+    /* 绕中心转的角度 → 吸附到 0/±90/180 */
+    const ang = Math.atan2(dy, dx) * 180 / Math.PI;
+    s.rot = snapRot(base.rot0 + (ang - base.ang0));
     applyStickerPos(el, s);
   });
   const end = e => {
@@ -2973,6 +3000,9 @@ function bindResizeHandle(handle, el, s){
     base = null;
     el.classList.remove('dragging');
     el.style.zIndex = '';
+    /* 收手必须重排一次层级：清掉临时 zIndex 后要按 s.z 重新落到人物层前面
+       （漏掉这一步 = 调完大小伙伴跑到人后面去了） */
+    applyStickerZ();
   };
   handle.addEventListener('pointerup', end);
   handle.addEventListener('pointercancel', end);
@@ -3085,15 +3115,23 @@ function shoot(){
     if(it.person){ paintPerson(g, OUT_W, OUT_H); return; }
     const s = it.s;
     const dw = s.w * sc, dh = s.h * sc;
+    /* 贴纸可能被转过角度：绕自身中心转，和屏幕上看到的一致 */
+    const rot = (s.rot || 0) * Math.PI / 180;
+    g.save();
+    if(rot){
+      const cx = (s.x + s.w / 2) * sc, cy = (s.y + s.h / 2) * sc;
+      g.translate(cx, cy); g.rotate(rot); g.translate(-cx, -cy);
+    }
     /* 3D 贴纸：按成片分辨率重渲一遍再贴。屏幕上那张是 512²，
        直接放大到成片会发虚，所以这里单独渲一张 1024² 的。 */
     if(s.ready && S3D.ok && renderStickerModel(s, S3D.shot)){
       g.drawImage(S3D.cv, 0, 0, S3D.cv.width, S3D.cv.height, s.x * sc, s.y * sc, dw, dh);
+      g.restore();
       return;
     }
     const img = CHAR_IMG(s.key);
-    if(!img || !img.naturalWidth) return;
-    g.drawImage(img, s.x * sc, s.y * sc, dw, dh);
+    if(img && img.naturalWidth) g.drawImage(img, s.x * sc, s.y * sc, dw, dh);
+    g.restore();
   });
 
   shotDataUrl = cc.toDataURL('image/jpeg', 0.92);
