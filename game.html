@@ -306,9 +306,26 @@
     filter:drop-shadow(0 16px 28px rgba(20,16,14,.40));
     z-index:10;
   }
-  /* 选中态：点一下贴纸就能选它，调前后遮挡关系 */
+  /* 选中态：拖出来就自动选中，调前后遮挡关系 */
   .sticker.sel{outline:2px dashed rgba(255,255,255,.92);outline-offset:5px;border-radius:8px}
   .sticker.overTrash{opacity:.55}
+  /* 虚线框右下角的放大镜把手：示意这个伙伴可以手动放大缩小，
+     本身也能拖（单指等比缩放，桌面/手机都顺手） */
+  .sticker .rzHandle{
+    position:absolute;right:-9px;bottom:-9px;
+    width:26px;height:26px;border-radius:50%;
+    background:rgba(255,255,255,.97);color:#14100E;
+    display:none;place-items:center;
+    box-shadow:0 3px 10px rgba(20,16,14,.30);
+    cursor:nwse-resize;touch-action:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .sticker.sel .rzHandle{display:grid}
+  .sticker .rzHandle svg{width:15px;height:15px;pointer-events:none}
+  .sticker .rzHandle svg *{
+    fill:none;stroke:currentColor;stroke-width:2.1;
+    stroke-linecap:round;stroke-linejoin:round;
+  }
 
   /* 左上角返回 */
   #capBack{
@@ -339,11 +356,11 @@
   #capTrash.hot{background:#E4572E;transform:scale(1.16)}
   #capTrash:active{transform:scale(.92)}
 
-  /* 右下角翻转镜头：和快门同一条水平中线 */
+  /* 右下角翻转镜头：和快门同一条水平中线（两者都压在白框上沿之上一点） */
   #capFlip{
     position:absolute;z-index:6;
     right:20px;
-    bottom:calc(env(safe-area-inset-bottom,0px) + 182px);
+    bottom:calc(env(safe-area-inset-bottom,0px) + 156px);
     width:52px;height:52px;border-radius:50%;border:none;
     background:rgba(20,16,14,.46);color:#fff;
     display:grid;place-items:center;cursor:pointer;
@@ -385,8 +402,8 @@
     backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
   }
   #stickerBarHint{
-    font-size:11px;font-weight:700;letter-spacing:.06em;
-    color:#B5A897;text-align:center;margin-bottom:10px;
+    font-size:14.5px;font-weight:700;letter-spacing:.01em;line-height:1.3;
+    color:#A0917C;text-align:center;margin-bottom:9px;
   }
   #stickerBarRow{
     display:flex;gap:12px;align-items:center;justify-content:center;
@@ -412,7 +429,7 @@
   #shutterBtn{
     position:absolute;z-index:6;
     left:50%;transform:translateX(-50%);
-    bottom:calc(env(safe-area-inset-bottom,0px) + 172px);
+    bottom:calc(env(safe-area-inset-bottom,0px) + 146px);
     width:72px;height:72px;border-radius:50%;border:none;
     background:rgba(255,255,255,.96);
     display:grid;place-items:center;cursor:pointer;
@@ -473,9 +490,9 @@
     .btn{padding:13px 38px;font-size:15px}
     #stickerBar{bottom:calc(env(safe-area-inset-bottom,0px) + 8px);padding:9px 12px 10px}
     .stickerSrc{width:52px;height:52px}
-    #shutterBtn{bottom:calc(env(safe-area-inset-bottom,0px) + 150px);width:64px;height:64px}
+    #shutterBtn{bottom:calc(env(safe-area-inset-bottom,0px) + 124px);width:64px;height:64px}
     #shutterBtn .ring{width:52px;height:52px}
-    #capFlip{bottom:calc(env(safe-area-inset-bottom,0px) + 158px);width:46px;height:46px}
+    #capFlip{bottom:calc(env(safe-area-inset-bottom,0px) + 133px);width:46px;height:46px}
     #capFlip svg{width:21px;height:21px}
     #shotImg{max-height:48vh}
     .tplCard{width:min(28vw,112px);padding:12px 6px 10px}
@@ -569,7 +586,7 @@
     </div>
 
     <div id="stickerBar">
-      <div id="stickerBarHint">拖出伙伴 · 点一下调前后 · 拖到右上角删除</div>
+      <div id="stickerBarHint">将小伙伴移动至屏幕进行合照</div>
       <div id="stickerBarRow"></div>
     </div>
 
@@ -2712,7 +2729,7 @@ function buildStickerBar(keys){
     document.getElementById('stickerBarHint').textContent = '还没有收集到伙伴，先去扫描贴纸吧';
     return;
   }
-  document.getElementById('stickerBarHint').textContent = '拖出伙伴 · 点一下调前后 · 拖到右上角删除';
+  document.getElementById('stickerBarHint').textContent = '将小伙伴移动至屏幕进行合照';
   has.forEach(k => {
     const c = CHARS[k];
     const b = document.createElement('div');
@@ -2745,6 +2762,12 @@ function onStickerSrcDown(e, key){
   }
   el.style.width = w + 'px';
   el.style.height = h + 'px';
+  // 右下角放大镜把手：不拖动也能看出来"这里可以放大缩小"
+  const hd = document.createElement('div');
+  hd.className = 'rzHandle';
+  hd.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="10.4" cy="10.4" r="6.1"/>'
+               + '<path d="M15.1 15.1 20.2 20.2"/><path d="M10.4 7.6v5.6M7.6 10.4h5.6"/></svg>';
+  el.appendChild(hd);
   stickerLayer.appendChild(el);
 
   const layerRect = stickerLayer.getBoundingClientRect();
@@ -2777,9 +2800,13 @@ function onStickerSrcDown(e, key){
       el.style.top  = s.y + 'px';
       el.style.transform = '';
       bindStickerDrag(el, s);
+      bindResizeHandle(hd, el, s);
       placedStickers.push(s);
       applyStickerZ();
       ensureSticker3D(s);
+      /* 拖出来就直接选中：顶部立刻出现「放前面 / 放后面」，
+         不用再点一下才显示（老师要求） */
+      selectSticker(s);
     } else {
       if(el.parentNode) el.parentNode.removeChild(el);
     }
@@ -2909,6 +2936,46 @@ function bindStickerDrag(el, s){
   el.addEventListener('pointerup', onUp);
   el.addEventListener('pointercancel', onUp);
   el.addEventListener('lostpointercapture', onUp);
+}
+
+/* 右下角放大镜把手：按住拖 = 等比缩放（左上角不动，和双指缩放同一套上下限）。
+   手势事件在把手上拦下来，否则会冒泡到贴纸本体、变成拖动位置。 */
+function bindResizeHandle(handle, el, s){
+  let base = null;
+  handle.addEventListener('pointerdown', e => {
+    /* 贴纸本体正在被拖/捏时，第二根手指落在把手上不算缩放，交给本体去做双指缩放 */
+    if(el.classList.contains('dragging')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    try{ handle.setPointerCapture(e.pointerId); }catch(_){}
+    base = { px: e.clientX, py: e.clientY, w0: s.w, h0: s.h };
+    el.classList.add('dragging');
+    el.style.zIndex = 20;
+  });
+  handle.addEventListener('pointermove', e => {
+    if(!base) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const maxW = Math.min(stickerLayer.offsetWidth, stickerLayer.offsetHeight) * 0.9;
+    /* 取位移里较大的那一维当缩放量，横着拖、竖着拖都能用 */
+    const dx = e.clientX - base.px, dy = e.clientY - base.py;
+    const delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+    const nw = clamp(base.w0 + delta, 44, maxW);
+    s.w = nw;
+    s.h = nw * (base.h0 / base.w0);
+    s.x = clamp(s.x, -s.w * 0.5, Math.max(0, stickerLayer.offsetWidth  - s.w));
+    s.y = clamp(s.y, -s.w * 0.5, Math.max(0, stickerLayer.offsetHeight - s.h));
+    applyStickerPos(el, s);
+  });
+  const end = e => {
+    if(!base) return;
+    if(e) e.stopPropagation();
+    base = null;
+    el.classList.remove('dragging');
+    el.style.zIndex = '';
+  };
+  handle.addEventListener('pointerup', end);
+  handle.addEventListener('pointercancel', end);
 }
 
 /* 打开拍照页
