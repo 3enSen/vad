@@ -427,12 +427,10 @@ export function createARSession({ container, ui }) {
     fillLight.position.set(0.8, 0.5, -1);
     scene.add(fillLight);
 
-    const anchor = mindar.addAnchor(0);
     const row = new THREE.Group();
     row.name = 'image-target-ground-plane-characters';
     row.position.set(0, -0.485, 0.06);
     row.visible = false;
-    anchor.group.add(row);
 
     const targetWidth = CHARACTER_SPAN / 3.18;
     const spacing = CHARACTER_SPAN / 3;
@@ -441,6 +439,10 @@ export function createARSession({ container, ui }) {
       onComplete() { music.start(); if (targetVisible) ui.found(); },
     });
 
+    // Register only once the opening is ready: tracking is already running and
+    // could otherwise emit targetFound during the awaited GLB download.
+    const anchor = mindar.addAnchor(0);
+    anchor.group.add(row);
     anchor.onTargetFound = () => {
       if (stopped || openingStarted) return;
       targetVisible = true;
