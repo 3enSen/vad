@@ -21,6 +21,13 @@ if (new URLSearchParams(location.search).has('debug')) {
 
 let session = null;
 let busy = false;
+const hint = document.querySelector('#interaction-hint');
+const prompts = ['试着摸摸他们的头吧', '拖动身体让他们转过身试试呢', '试着向平面吹一口气吧！'];
+let tutorialStep = -1;
+function showHint(text = '') {
+  hint.textContent = text;
+  hint.hidden = !text;
+}
 
 function setStatus(text, state = 'idle') {
   elements.statusText.textContent = text;
@@ -52,6 +59,8 @@ const ui = {
     elements.start.textContent = message;
   },
   initializing() {
+    tutorialStep = -1;
+    showHint('对准学院的三个标志打开ar');
     setStatus('准备中', 'loading');
     elements.debugInit.textContent = '初始化中';
     elements.debugError.textContent = '无';
@@ -64,6 +73,7 @@ const ui = {
     elements.debugModel.textContent = '否';
   },
   found() {
+    if (tutorialStep === -1) { tutorialStep = 0; showHint(prompts[0]); }
     setStatus('识别成功', 'success');
     elements.debugTarget.textContent = '是';
     elements.debugModel.textContent = '是';
@@ -71,12 +81,19 @@ const ui = {
     elements.photo.hidden = false;
   },
   blowDetected() {
+    ui.interacted('blow');
     setStatus('检测到吹气，精灵开始旋转', 'success');
   },
   microphoneReady() {
     // Keep the minimal UI; expose microphone state only in the optional debug panel.
     elements.debugInit.textContent = '已启动（麦克风就绪）';
   },
+  interacted(action) {
+    if (['pat', 'turn', 'blow'][tutorialStep] !== action) return;
+    tutorialStep += 1;
+    showHint(prompts[tutorialStep]);
+  },
+  appearing() { showHint(); },
   microphoneUnavailable(error) {
     const reason = error?.name === 'NotAllowedError'
       ? '麦克风权限被拒绝，请在 Safari 网站设置中允许麦克风后重试。'
@@ -92,6 +109,8 @@ const ui = {
     elements.photo.hidden = true;
   },
   stopped() {
+    tutorialStep = -1;
+    showHint();
     setStatus('已停止', 'idle');
     elements.debugInit.textContent = '已停止';
     elements.debugTarget.textContent = '否';
@@ -100,6 +119,7 @@ const ui = {
     elements.photo.hidden = true;
   },
   error(error) {
+    showHint();
     const message = explainError(error);
     console.error('[WebAR]', error);
     setStatus('摄像头不可用', 'error');

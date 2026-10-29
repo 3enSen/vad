@@ -173,6 +173,7 @@ export function createARSession({ container, ui }) {
       };
       variant.mixer.addEventListener('finished', variant.listener);
       variant.action.play();
+      ui.interacted?.(actionName);
     } catch (error) {
       record.busy = false;
       console.warn(`[WebAR] ${record.data.key} ${actionName} animation failed`, error);
@@ -187,7 +188,7 @@ export function createARSession({ container, ui }) {
       const head = new THREE.Vector3(0, height * 0.79, 0);
       const body = new THREE.Vector3(0, height * 0.42, 0);
       const top = new THREE.Vector3(0, height, 0);
-      const headBoundary = new THREE.Vector3(0, height * (2 / 3), 0);
+      const headBoundary = new THREE.Vector3(0, height * 0.60, 0);
       const headLeft = new THREE.Vector3(-width * 0.58, height * 0.84, 0);
       const headRight = new THREE.Vector3(width * 0.58, height * 0.84, 0);
       const bottom = new THREE.Vector3(0, 0, 0);
@@ -225,7 +226,8 @@ export function createARSession({ container, ui }) {
       const right = Math.max(target[headOnly ? 'headLeft' : 'bodyLeft'].x, target[headOnly ? 'headRight' : 'bodyRight'].x);
       const top = headOnly ? target.headTop.y : Math.min(target.headTop.y, target.bottom.y);
       const bottom = headOnly ? target.headBoundary.y : Math.max(target.headTop.y, target.bottom.y);
-      if (point.x < left - 0.018 || point.x > right + 0.018 || point.y < top - 0.018 || point.y > bottom + 0.018) continue;
+      const padding = headOnly ? 0.025 : 0.018;
+      if (point.x < left - padding || point.x > right + padding || point.y < top - padding || point.y > bottom + padding) continue;
       const center = headOnly ? target.head : target.body;
       const distance = distance2D(point, center);
       if (distance < bestDistance) {
@@ -320,6 +322,7 @@ export function createARSession({ container, ui }) {
             Math.PI * 1.5,
           );
           pose.userData.lastTurnGestureAt = now;
+          ui.interacted?.('turn');
         }
       }
       previousPoint = current;
@@ -439,9 +442,18 @@ export function createARSession({ container, ui }) {
     });
 
     anchor.onTargetFound = () => {
-      if (stopped) return;
+      if (stopped || openingStarted) return;
       targetVisible = true;
       row.visible = true;
+      // Retain the detected pose independently of MindAR hiding/resetting its anchor.
+      // This is a frozen camera-space pose, not world tracking after target loss.
+      const retainedAnchor = new THREE.Group();
+      retainedAnchor.matrixAutoUpdate = false;
+      retainedAnchor.matrix.copy(anchor.group.matrix);
+      retainedAnchor.add(row);
+      scene.add(retainedAnchor);
+      queueMicrotask(() => { if (!stopped) mindar.controller.stopProcessVideo(); });
+      ui.appearing?.();
       if (!openingStarted) {
         openingStarted = true;
         opening.start();
@@ -449,7 +461,7 @@ export function createARSession({ container, ui }) {
       if (!opening.active) ui.found();
     };
     anchor.onTargetLost = () => {
-      if (stopped) return;
+      if (stopped || openingStarted) return;
       targetVisible = false;
       row.visible = false;
       ui.lost();

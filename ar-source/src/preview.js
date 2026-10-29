@@ -176,7 +176,7 @@ function characterScreenBounds(record) {
   return {
     head: screenPoint(new THREE.Vector3(0, height * 0.82, 0), record.pose),
     headTop: screenPoint(new THREE.Vector3(0, height, 0), record.pose),
-    headBoundary: screenPoint(new THREE.Vector3(0, height * (2 / 3), 0), record.pose),
+    headBoundary: screenPoint(new THREE.Vector3(0, height * 0.60, 0), record.pose),
     headLeft: screenPoint(new THREE.Vector3(-width * 0.58, height * 0.84, 0), record.pose),
     headRight: screenPoint(new THREE.Vector3(width * 0.58, height * 0.84, 0), record.pose),
     body: screenPoint(new THREE.Vector3(0, height * 0.42, 0), record.pose),
@@ -196,7 +196,8 @@ function hitCharacter(point, headOnly = false) {
     const right = Math.max(bounds[headOnly ? 'headLeft' : 'bodyLeft'].x, bounds[headOnly ? 'headRight' : 'bodyRight'].x);
     const top = headOnly ? bounds.headTop.y : Math.min(bounds.headTop.y, bounds.bottom.y);
     const bottom = headOnly ? bounds.headBoundary.y : Math.max(bounds.headTop.y, bounds.bottom.y);
-    if (point.x < left - 0.018 || point.x > right + 0.018 || point.y < top - 0.018 || point.y > bottom + 0.018) continue;
+    const padding = headOnly ? 0.025 : 0.018;
+    if (point.x < left - padding || point.x > right + padding || point.y < top - padding || point.y > bottom + padding) continue;
     const target = headOnly ? bounds.head : bounds.body;
     const distance = Math.hypot(target.x - point.x, target.y - point.y);
     if (distance < nearestDistance) {

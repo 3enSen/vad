@@ -107,6 +107,23 @@ button { font: inherit; }
 .debug dt { color: #7f9787; }
 .debug dd { margin: 0; overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
+.interaction-hint {
+  position: absolute;
+  z-index: 6;
+  top: calc(env(safe-area-inset-top, 0px) + 78px);
+  left: 20px;
+  right: 20px;
+  margin: 0;
+  color: #fff;
+  background: transparent;
+  font-size: clamp(14px, 4vw, 19px);
+  font-weight: 800;
+  line-height: 1.5;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 1px 4px rgba(0,0,0,.65);
+}
 
 @keyframes pulse { 50% { opacity: .45; transform: scale(.8); } }
 @media (max-height: 620px) { .panel { top: max(8px, env(safe-area-inset-top)); } .actions button { min-height: 38px; } }
