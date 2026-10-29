@@ -4,6 +4,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { startBlowDetector } from './blow.js';
 import { createOpening } from './opening.js';
+import { createBackgroundMusic } from './background-music.js';
+
+const music = createBackgroundMusic();
+window.addEventListener('pagehide', () => music.dispose());
 import { applyCharacterMaterials } from './character-materials.js';
 
 const root = document.querySelector('#preview');
@@ -330,6 +334,7 @@ renderer.domElement.addEventListener('pointercancel', () => { dragStart = null; 
 const clock = new THREE.Clock();
 const previewControls = document.querySelector('.controls');
 function startOpening() {
+  music.pause();
   previewControls.hidden = true;
   controls.enabled = false;
   setGestureStatus('');
@@ -343,6 +348,7 @@ function startOpening() {
 try {
   opening = await createOpening({ parent: scene, records, spacing: span / 3, z: 0.3,
     onComplete() {
+      music.start();
       previewControls.hidden = false;
       controls.enabled = true;
       document.querySelector('.status').textContent = '精灵已到来';

@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MindARThree } from 'mind-ar/dist/mindar-image-three.prod.js';
 import { startBlowDetector } from './blow.js';
 import { createOpening } from './opening.js';
+import { createBackgroundMusic } from './background-music.js';
 import { applyCharacterMaterials } from './character-materials.js';
 
 const BASE_URL = import.meta.env.BASE_URL;
@@ -92,6 +93,7 @@ function distance2D(a, b) {
 }
 
 export function createARSession({ container, ui }) {
+  const music = createBackgroundMusic();
   let mindar = null;
   let characters = [];
   let blowDetector = null;
@@ -362,6 +364,7 @@ export function createARSession({ container, ui }) {
   }
 
   async function start() {
+    music.unlock();
     if (!window.isSecureContext && location.hostname !== 'localhost') {
       throw new Error('摄像头需要 HTTPS 安全来源。');
     }
@@ -432,7 +435,7 @@ export function createARSession({ container, ui }) {
     const spacing = CHARACTER_SPAN / 3;
     characters = models.map((model, index) => makeCharacterRecord(model, CHARACTERS[index], index, spacing, targetWidth, row));
     opening = await createOpening({ parent: row, records: characters, spacing,
-      onComplete() { if (targetVisible) ui.found(); },
+      onComplete() { music.start(); if (targetVisible) ui.found(); },
     });
 
     anchor.onTargetFound = () => {
@@ -491,6 +494,7 @@ export function createARSession({ container, ui }) {
   async function stop() {
     if (stopped) return;
     stopped = true;
+    music.dispose();
     targetVisible = false;
     removeScreenGestures?.();
     removeScreenGestures = null;
